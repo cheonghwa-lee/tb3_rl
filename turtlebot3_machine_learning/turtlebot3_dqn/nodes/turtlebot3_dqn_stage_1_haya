@@ -1,0 +1,322 @@
+#!/usr/bin/env python
+#################################################################################
+# Copyright 2018 ROBOTIS CO., LTD.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#################################################################################
+
+# Authors: Gilbert #
+
+import rospy
+import os
+import json
+import numpy as np
+import random
+import time
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from collections import deque
+from std_msgs.msg import Float32MultiArray
+from src.turtlebot3_dqn.environment_stage_1_haya import Env
+from keras.models import Sequential, load_model
+from keras.optimizers import RMSprop
+from keras.layers import Dense, Dropout, Activation
+
+# from random import choices
+
+EPISODES = 3000
+
+class ReinforceAgent():
+    def __init__(self, state_size, action_size):
+        self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
+        self.dirPath = os.path.dirname(os.path.realpath(__file__))
+        self.dirPath = self.dirPath.replace('turtlebot3_dqn/nodes', 'turtlebot3_dqn/save_model/stage_1_')
+        self.result = Float32MultiArray()
+
+        self.load_model = False
+        self.load_episode = 0
+        self.state_size = state_size
+        self.action_size = action_size
+        self.episode_step = 6000
+        self.target_update = 2000
+        self.discount_factor = 0.99
+        self.learning_rate = 0.00025
+        self.epsilon = 1.0 # 1.0
+        self.epsilon_decay = 0.99
+        self.epsilon_min = 0.05
+        self.batch_size = 64
+        self.train_start = 64
+        self.memory = deque(maxlen=1000000)
+
+        self.model = self.buildModel()
+        self.target_model = self.buildModel()
+
+        self.updateTargetModel()
+
+        if self.load_model:
+            self.model.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
+
+            with open(self.dirPath+str(self.load_episode)+'.json') as outfile:
+                param = json.load(outfile)
+                self.epsilon = param.get('epsilon')
+
+    def buildModel(self):
+        model = Sequential()
+        dropout = 0.2
+
+        model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
+
+        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dropout(dropout))
+
+        model.add(Dense(self.action_size, kernel_initializer='lecun_uniform'))
+        model.add(Activation('linear'))
+        model.compile(loss='mse', optimizer=RMSprop(lr=self.learning_rate, rho=0.9, epsilon=1e-06))
+        model.summary()
+
+        return model
+
+    def getQvalue(self, reward, next_target, done):
+        if done:
+            return reward
+        else:
+            return reward + self.discount_factor * np.amax(next_target)
+
+    def updateTargetModel(self):
+        self.target_model.set_weights(self.model.get_weights())
+
+    def getAction(self, state):
+        tlqkf1 = np.random.rand()
+        # print(tlqkf1<= self.epsilon)
+        if  tlqkf1 <= self.epsilon:
+            self.q_value = np.zeros(self.action_size)
+            return random.randrange(self.action_size)
+            # tlqkf = np.random.choice([0, 1, 2, 3, 4], p=[0.01,0.04,0.9,0.04,0.01])
+            # tlqkf = np.random.choice([0, 1, 2, 3, 4], p=[0.0,1.0,0.0,0.0,0.0])
+            # print(tlqkf)
+            # return tlqkf
+        else:
+            q_value = self.model.predict(state.reshape(1, len(state)))
+            self.q_value = q_value
+            return np.argmax(q_value[0])
+
+    # def getAction(self, state):
+    #     tlqkf1 = np.random.rand()
+    #     # print(tlqkf1<= self.epsilon)
+    #     if  tlqkf1 <= self.epsilon:
+    #         # self.q_value = np.zeros(self.action_size)
+    #         # return random.randrange(self.action_size)
+    #         tlqkf = np.random.choice([0, 1, 2, 3, 4], p=[0.0,0.0,1.0,0.0,0.0])
+    #         # print(tlqkf)
+    #         return tlqkf
+    #     else:
+    #         q_value = self.model.predict(state.reshape(1, len(state)))
+    #         self.q_value = q_value
+    #         return np.argmax(q_value[0])
+
+    def appendMemory(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+
+    def trainModel(self, target=False):
+        mini_batch = random.sample(self.memory, self.batch_size)
+        X_batch = np.empty((0, self.state_size), dtype=np.float64)
+        Y_batch = np.empty((0, self.action_size), dtype=np.float64)
+
+        for i in range(self.batch_size):
+            states = mini_batch[i][0]
+            actions = mini_batch[i][1]
+            rewards = mini_batch[i][2]
+            next_states = mini_batch[i][3]
+            dones = mini_batch[i][4]
+
+            q_value = self.model.predict(states.reshape(1, len(states)))
+            self.q_value = q_value
+
+            if target:
+                next_target = self.target_model.predict(next_states.reshape(1, len(next_states)))
+            else:
+                next_target = self.model.predict(next_states.reshape(1, len(next_states)))
+
+            next_q_value = self.getQvalue(rewards, next_target, dones)
+
+            X_batch = np.append(X_batch, np.array([states.copy()]), axis=0)
+            Y_sample = q_value.copy()
+
+            Y_sample[0][actions] = next_q_value
+            Y_batch = np.append(Y_batch, np.array([Y_sample[0]]), axis=0)
+
+            if dones:
+                X_batch = np.append(X_batch, np.array([next_states.copy()]), axis=0)
+                Y_batch = np.append(Y_batch, np.array([[rewards] * self.action_size]), axis=0)
+
+        self.model.fit(X_batch, Y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
+
+if __name__ == '__main__':
+    rospy.init_node('turtlebot3_dqn_stage_1')
+    pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
+    pub_result1 = rospy.Publisher('tb3_0/result', Float32MultiArray, queue_size=5)
+    pub_result2 = rospy.Publisher('tb3_1/result', Float32MultiArray, queue_size=5)
+    pub_result3 = rospy.Publisher('tb3_3/result', Float32MultiArray, queue_size=5)
+    pub_get_action = rospy.Publisher('get_action', Float32MultiArray, queue_size=5)
+    pub_get_action1 = rospy.Publisher('tb3_0/get_action', Float32MultiArray, queue_size=5)
+    pub_get_action2 = rospy.Publisher('tb3_1/get_action', Float32MultiArray, queue_size=5)
+    pub_get_action3 = rospy.Publisher('tb3_2/get_action', Float32MultiArray, queue_size=5)
+    result = Float32MultiArray()
+    result1 = Float32MultiArray()
+    result2 = Float32MultiArray()
+    result3 = Float32MultiArray()
+    # get_action = Float32MultiArray()
+    get_action1 = Float32MultiArray()
+    get_action2 = Float32MultiArray()
+    get_action3 = Float32MultiArray()
+
+    state_size = 28
+    action_size = 5
+
+    env = Env(action_size)
+
+    agent1 = ReinforceAgent(state_size, action_size)
+    agent2 = ReinforceAgent(state_size, action_size)
+    agent3 = ReinforceAgent(state_size, action_size)
+
+    scores, episodes = [], []
+    global_step = 0
+    start_time = time.time()
+
+    for e in range(agent1.load_episode + 1, EPISODES):
+        done = False
+        done1 = False
+        done2 = False
+        done3 = False
+        state1, state2, state3 = env.reset()
+        # state1 = env.reset("tb3_0/scan")
+        # state2 = env.reset("tb3_1/scan")
+        score = 0
+        score1 = 0
+        score2 = 0
+        score3 = 0
+        for t in range(agent1.episode_step):
+            action1 = agent1.getAction(state1)
+            action2 = agent2.getAction(state2)
+            action3 = agent3.getAction(state3)
+            # print(action1, action2)
+
+            next_state1, reward1, done1 = env.step(action1, "tb3_0/scan")
+            next_state2, reward2, done2 = env.step(action2, "tb3_1/scan")
+            next_state3, reward3, done3 = env.step(action3, "tb3_2/scan")
+            done = done1 or done2 or done3
+            # print(done, done1, done2)
+            # print(reward1, reward2)
+
+            agent1.appendMemory(state1, action1, reward1, next_state1, done1)
+            agent2.appendMemory(state2, action2, reward2, next_state2, done2)
+            agent3.appendMemory(state3, action3, reward3, next_state3, done3)
+
+            if len(agent1.memory) >= agent1.train_start:
+                if global_step <= agent1.target_update:
+                    agent1.trainModel()
+                else:
+                    agent1.trainModel(True)
+
+            if len(agent2.memory) >= agent2.train_start:
+                if global_step <= agent2.target_update:
+                    agent2.trainModel()
+                else:
+                    agent2.trainModel(True)
+
+            if len(agent3.memory) >= agent3.train_start:
+                if global_step <= agent3.target_update:
+                    agent3.trainModel()
+                else:
+                    agent3.trainModel(True)
+
+            score1 += reward1
+            score2 += reward2
+            score3 += reward3
+            score = score1 + score2 + score3 # important
+
+            state1 = next_state1
+            state2 = next_state2
+            state3 = next_state3
+
+            get_action1.data = [action1, score1, reward1]
+            get_action2.data = [action2, score2, reward2]
+            get_action3.data = [action3, score3, reward3]
+
+            pub_get_action1.publish(get_action1)
+            pub_get_action2.publish(get_action2)
+            pub_get_action3.publish(get_action3)
+
+            if e % 10 == 0:
+                agent1.model.save(agent1.dirPath + str(e) + '.h5')
+                with open(agent1.dirPath + str(e) + '.json', 'w') as outfile:
+                    json.dump(param_dictionary1, outfile)
+
+            if e % 10 == 0:
+                agent2.model.save(agent2.dirPath + str(e) + '.h5')
+                with open(agent2.dirPath + str(e) + '.json', 'w') as outfile:
+                    json.dump(param_dictionary2, outfile)
+
+            if e % 10 == 0:
+                agent3.model.save(agent3.dirPath + str(e) + '.h5')
+                with open(agent3.dirPath + str(e) + '.json', 'w') as outfile:
+                    json.dump(param_dictionary3, outfile)
+
+            if t >= 500:
+                rospy.loginfo("Time out!!")
+                done = True
+
+            if done:
+                # time.sleep(1)
+                # result.data = [score, (np.max(agent1.q_value) + np.max(agent2.q_value) + np.max(agent3.q_value)) / 3]
+                result1.data = [score1, np.max(agent1.q_value)]
+                result2.data = [score2, np.max(agent2.q_value)]
+                result3.data = [score2, np.max(agent3.q_value)]
+                pub_result.publish(result)
+                pub_result1.publish(result1)
+                pub_result2.publish(result2)
+                pub_result2.publish(result3)
+                agent1.updateTargetModel()
+                agent2.updateTargetModel()
+                agent3.updateTargetModel()
+                scores.append(score)
+                episodes.append(e)
+                m, s = divmod(int(time.time() - start_time), 60)
+                h, m = divmod(m, 60)
+                # rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                #               e, score, h, m, s)
+                rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                              e, score1, len(agent1.memory), agent1.epsilon, h, m, s)
+                rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                              e, score2, len(agent2.memory), agent2.epsilon, h, m, s)
+                rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                              e, score3, len(agent3.memory), agent3.epsilon, h, m, s)
+                param_keys = ['epsilon']
+                param_values1 = [agent1.epsilon]
+                param_values2 = [agent2.epsilon]
+                param_values3 = [agent3.epsilon]
+                param_dictionary1 = dict(zip(param_keys, param_values1))
+                param_dictionary2 = dict(zip(param_keys, param_values2))
+                param_dictionary3 = dict(zip(param_keys, param_values3))
+                break
+
+            global_step += 1
+            if global_step % agent1.target_update == 0:
+                rospy.loginfo("UPDATE TARGET NETWORK")
+
+        if agent1.epsilon > agent1.epsilon_min:
+            agent1.epsilon *= agent1.epsilon_decay
+        if agent2.epsilon > agent2.epsilon_min:
+            agent2.epsilon *= agent2.epsilon_decay
+        if agent3.epsilon > agent3.epsilon_min:
+            agent3.epsilon *= agent3.epsilon_decay
