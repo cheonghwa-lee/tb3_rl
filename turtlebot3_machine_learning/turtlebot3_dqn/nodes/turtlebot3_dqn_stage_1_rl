@@ -83,6 +83,8 @@ class ReinforceAgent():
         self.train_start = 64
         self.memory = deque(maxlen=1000000)
 
+        # self.q_value = np.zeros(self.action_size)
+
         self.model = self.buildModel()
         self.target_model = self.buildModel()
 
@@ -174,7 +176,7 @@ if __name__ == '__main__':
     agent_topics = ["tb3_{}".format(i) for i in range(num_agent)]
     pub_results = [rospy.Publisher(topic + '/result', Float32MultiArray, queue_size=5) for topic in agent_topics]
     pub_get_actions = [rospy.Publisher(topic + '/get_action', Float32MultiArray, queue_size=5) for topic in agent_topics]
-    results = [Float32MultiArray() for _ in agent_topics]
+    results = [Float32MultiArray() for _ in agent_topics] # range(num_agent)
     get_actions = [Float32MultiArray() for _ in agent_topics]
     
     for learn in range(LEARN):
@@ -182,101 +184,99 @@ if __name__ == '__main__':
         action_size = 9
 
         env = Env(action_size)
-
-        agent1 = ReinforceAgent(state_size, action_size)
-        agent2 = ReinforceAgent(state_size, action_size)
-        agent3 = ReinforceAgent(state_size, action_size)
+        agents = [ReinforceAgent(state_size, action_size) for _ in agent_topics]
 
         scores, episodes = [], []
         global_step = 0
         start_time = time.time()
         now = datetime.datetime.now()
+
         current_time = now.strftime("%H:%M:%S")
         FIENAME = '/home/rtos-ubuntu/Result_Data/ubuntu_A_' + current_time + '.csv'
-        for e in range(agent1.load_episode + 1, EPISODES):
+
+        for e in range(agents[0].load_episode + 1, EPISODES):
             done = False
-            done1 = False
-            done2 = False
-            done3 = False
-            state1, state2, state3, px1, px2, px3 = env.reset()
+            dones = [False for _ in agent_topics]
+            states, pxes = env.reset()
             score = 0
-            score1 = 0
-            score2 = 0
-            score3 = 0
-            for t in range(agent1.episode_step):
-                action2 = agent2.getAction(state2)
-                action2 = 5 # 5
-                action3 = agent3.getAction(state3)
-                action3 = 3 # 3
+            scores = [0 for _ in agent_topics] # range(num_agent)
+            actions = [0 for _ in agent_topics]
+            for t in range(agents[0].episode_step):
+                actions[1] = agents[1].getAction(states[1])
+                actions[1] = 5 # 5
+                actions[2] = agents[2].getAction(states[2])
+                actions[2] = 3 # 3
                 # state1[0] = action2
                 # state1[1] = action3
-                action1 = agent1.getAction(state1)
+                actions[0] = agents[0].getAction(states[0])
                 # print(state1)
+                # print(agents[0].q_value)
 
-                next_state1, reward1, done1, next_px1 = env.step(action1, "tb3_0/scan")
-                next_state2, reward2, done2, next_px2 = env.step(action2, "tb3_1/scan")
-                next_state3, reward3, done3, next_px3 = env.step(action3, "tb3_2/scan")
-                done = done1 or done2 or done3
+                next_states, rewards, dones, next_pxes = env.step(actions, [agent_topics[i] + "/scan" for i in range(num_agent)])
+                # next_state1, reward1, done1, next_px1 = env.step(actions[0], "tb3_0/scan")
+                # next_state2, reward2, done2, next_px2 = env.step(actions[1], "tb3_1/scan")
+                # next_state3, reward3, done3, next_px3 = env.step(actions[2], "tb3_2/scan")
+                done = dones[0] or dones[1] or dones[2]
 
-                reward1 = (next_px1 - px1) * 100 + reward1 #
-                reward2 = (next_px2 - px2) * 100 + reward2
-                reward3 = (next_px3 - px3) * 100 + reward3
+                rewards[0] = (next_pxes[0] - pxes[0]) * 100 + rewards[0] #
+                rewards[1] = (next_pxes[1] - pxes[1]) * 100 + rewards[1]
+                rewards[2] = (next_pxes[2] - pxes[2]) * 100 + rewards[2]
                 
-                agent1.appendMemory(state1, action1, reward1, next_state1, done1)
-                agent2.appendMemory(state2, action2, reward2, next_state2, done2)
-                agent3.appendMemory(state3, action3, reward3, next_state3, done3)
+                agents[0].appendMemory(states[0], actions[0], rewards[0], next_states[0], dones[0])
+                agents[1].appendMemory(states[1], actions[1], rewards[1], next_states[1], dones[1])
+                agents[2].appendMemory(states[2], actions[2], rewards[2], next_states[2], dones[2])
 
-                if len(agent1.memory) >= agent1.train_start:
-                    if global_step <= agent1.target_update:
-                        agent1.trainModel()
+                if len(agents[0].memory) >= agents[0].train_start:
+                    if global_step <= agents[0].target_update:
+                        agents[0].trainModel()
                     else:
-                        agent1.trainModel(True)
+                        agents[0].trainModel(True)
 
-                if len(agent2.memory) >= agent2.train_start:
-                    if global_step <= agent2.target_update:
-                        agent2.trainModel()
+                if len(agents[1].memory) >= agents[1].train_start:
+                    if global_step <= agents[1].target_update:
+                        agents[1].trainModel()
                     else:
-                        agent2.trainModel(True)
+                        agents[1].trainModel(True)
 
-                if len(agent3.memory) >= agent3.train_start:
-                    if global_step <= agent3.target_update:
-                        agent3.trainModel()
+                if len(agents[2].memory) >= agents[2].train_start:
+                    if global_step <= agents[2].target_update:
+                        agents[2].trainModel()
                     else:
-                        agent3.trainModel(True)
+                        agents[2].trainModel(True)
 
-                score1 += reward1
-                score2 += reward2
-                score3 += reward3
-                score = score1 + score2 + score3 # 
+                scores[0] += rewards[0]
+                scores[1] += rewards[1]
+                scores[2] += rewards[2]
+                score = scores[0] + scores[1] + scores[2] # 
 
-                state1 = next_state1
-                state2 = next_state2
-                state3 = next_state3
-                px1 = next_px1
-                px2 = next_px2
-                px3 = next_px3
+                states[0] = next_states[0]
+                states[1] = next_states[1]
+                states[2] = next_states[2]
+                pxes[0] = next_pxes[0]
+                pxes[1] = next_pxes[1]
+                pxes[2] = next_pxes[2]
 
-                get_actions[0].data = [action1, score1, reward1]
-                get_actions[1].data = [action2, score2, reward2]
-                get_actions[2].data = [action3, score3, reward3]
+                get_actions[0].data = [actions[0], scores[0], rewards[0]]
+                get_actions[1].data = [actions[1], scores[1], rewards[1]]
+                get_actions[2].data = [actions[2], scores[2], rewards[2]]
 
                 pub_get_actions[0].publish(get_actions[0])
                 pub_get_actions[1].publish(get_actions[1])
                 pub_get_actions[2].publish(get_actions[2])
 
                 if e % 10 == 0:
-                    agent1.model.save(agent1.dirPath + str(e) + '.h5')
-                    with open(agent1.dirPath + str(e) + '.json', 'w') as outfile:
+                    agents[0].model.save(agents[0].dirPath + str(e) + '.h5')
+                    with open(agents[0].dirPath + str(e) + '.json', 'w') as outfile:
                         json.dump(param_dictionary1, outfile)
 
                 if e % 10 == 0:
-                    agent2.model.save(agent2.dirPath + str(e) + '.h5')
-                    with open(agent2.dirPath + str(e) + '.json', 'w') as outfile:
+                    agents[1].model.save(agents[1].dirPath + str(e) + '.h5')
+                    with open(agents[1].dirPath + str(e) + '.json', 'w') as outfile:
                         json.dump(param_dictionary2, outfile)
 
                 if e % 10 == 0:
-                    agent3.model.save(agent3.dirPath + str(e) + '.h5')
-                    with open(agent3.dirPath + str(e) + '.json', 'w') as outfile:
+                    agents[2].model.save(agents[2].dirPath + str(e) + '.h5')
+                    with open(agents[2].dirPath + str(e) + '.json', 'w') as outfile:
                         json.dump(param_dictionary3, outfile)
 
                 if t >= 500:
@@ -287,9 +287,9 @@ if __name__ == '__main__':
                     print(e)
                     list_json = []
                     # result.data = [score, (np.max(agent1.q_value) + np.max(agent2.q_value) + np.max(agent3.q_value)) / 3]
-                    results[0].data = [score1, np.max(agent1.q_value)]
-                    results[1].data = [score2, np.max(agent2.q_value)]
-                    results[2].data = [score3, np.max(agent3.q_value)]
+                    results[0].data = [scores[0], np.max(agents[0].q_value)]
+                    results[1].data = [scores[1], np.max(agents[1].q_value)]
+                    results[2].data = [scores[2], np.max(agents[2].q_value)]
                     # pub_result.publish(result)
                     pub_results[0].publish(results[0])
                     pub_results[1].publish(results[1])
@@ -297,32 +297,6 @@ if __name__ == '__main__':
 
                     unix_time = int(time.time())
 
-                    # json_data_formet = {
-                    #     "metric": METRIC_NAME,
-                    #     "timestamp": unix_time,
-                    #     "value": round(result1.data[0],3),
-                    #     "tags": {
-                    #         "result": "score1",
-                    #     }
-                    # }
-                    # list_json.append(json_data_formet)
-
-                    # json_data_formet = {
-                    #     "metric": METRIC_NAME,
-                    #     "timestamp": unix_time,
-                    #     "value": round(result1.data[1],3),
-                    #     "tags": {
-                    #         "result": "q_value1",
-                    #     }
-                    # }
-                    # list_json.append(json_data_formet)
-
-                    # try:
-                    #     #print(json.dumps(list_json))
-                    #     consumer_queue.put(json.dumps(list_json)) 
-                    # except:
-                    #     traceback.print_exc()
-            
                     if os.path.isfile(FIENAME) == False:
                         open(FIENAME, 'w')
                     with open(FIENAME, 'a') as f:
@@ -330,9 +304,9 @@ if __name__ == '__main__':
                         wr.writerow(results[0].data)
 
                     
-                    agent1.updateTargetModel()
-                    agent2.updateTargetModel()
-                    agent3.updateTargetModel()
+                    agents[0].updateTargetModel()
+                    agents[1].updateTargetModel()
+                    agents[2].updateTargetModel()
                     scores.append(score)
                     episodes.append(e)
                     m, s = divmod(int(time.time() - start_time), 60)
@@ -340,27 +314,27 @@ if __name__ == '__main__':
                     # rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
                     #               e, score, h, m, s)
                     rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
-                                e, score1, len(agent1.memory), agent1.epsilon, h, m, s)
+                                e, scores[0], len(agents[0].memory), agents[0].epsilon, h, m, s)
                     rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
-                                e, score2, len(agent2.memory), agent2.epsilon, h, m, s)
+                                e, scores[1], len(agents[1].memory), agents[1].epsilon, h, m, s)
                     rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
-                                e, score3, len(agent3.memory), agent3.epsilon, h, m, s)
+                                e, scores[2], len(agents[2].memory), agents[2].epsilon, h, m, s)
                     param_keys = ['epsilon']
-                    param_values1 = [agent1.epsilon]
-                    param_values2 = [agent2.epsilon]
-                    param_values3 = [agent3.epsilon]
+                    param_values1 = [agents[0].epsilon]
+                    param_values2 = [agents[1].epsilon]
+                    param_values3 = [agents[2].epsilon]
                     param_dictionary1 = dict(zip(param_keys, param_values1))
                     param_dictionary2 = dict(zip(param_keys, param_values2))
                     param_dictionary3 = dict(zip(param_keys, param_values3))
                     break
                 
                 global_step += 1
-                if global_step % agent1.target_update == 0:
+                if global_step % agents[0].target_update == 0:
                     rospy.loginfo("UPDATE TARGET NETWORK")
 
-            if agent1.epsilon > agent1.epsilon_min:
-                agent1.epsilon *= agent1.epsilon_decay
-            if agent2.epsilon > agent2.epsilon_min:
-                agent2.epsilon *= agent2.epsilon_decay
-            if agent3.epsilon > agent3.epsilon_min:
-                agent3.epsilon *= agent3.epsilon_decay
+            if agents[0].epsilon > agents[0].epsilon_min:
+                agents[0].epsilon *= agents[0].epsilon_decay
+            if agents[1].epsilon > agents[1].epsilon_min:
+                agents[1].epsilon *= agents[1].epsilon_decay
+            if agents[2].epsilon > agents[2].epsilon_min:
+                agents[2].epsilon *= agents[2].epsilon_decay

@@ -18,7 +18,6 @@
 # Authors: Gilbert #
 # Revised by hayalee #
 
-from os import O_NOATIME
 import rospy
 import numpy as np
 import math
@@ -30,46 +29,33 @@ from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 # from respawnGoal import Respawn
 
-import time
-
 class Env():
     def __init__(self, action_size):
+        self.num_agents = 3
+        self.agent_topics = ["tb3_{}".format(i) for i in range(self.num_agents)]
+
         self.goal_x = 5.0
         self.goal_y = 0
-        self.heading1 = 0
-        self.heading2 = 0
-        self.heading3 = 0
+        # self.initGoal = True
+        # self.get_goalbox = False
+
+        self.headings = [0.0 for _ in range(self.num_agents)]
+        
         self.action_size = action_size
-        self.initGoal = True
-        self.get_goalbox = False
-        self.position1 = Pose()
-        self.position2 = Pose()
-        self.position3 = Pose()
-        self._position1 = Pose()
-        self._position2 = Pose()
-        self._position3 = Pose()
-        self.pub_cmd_vel1 = rospy.Publisher('tb3_0/cmd_vel', Twist, queue_size=5)
-        self.sub_odom1 = rospy.Subscriber('tb3_0/odom', Odometry, self.getOdometry)
-        self.pub_cmd_vel2 = rospy.Publisher('tb3_1/cmd_vel', Twist, queue_size=5)
-        self.sub_odom2 = rospy.Subscriber('tb3_1/odom', Odometry, self.getOdometry)
-        self.pub_cmd_vel3 = rospy.Publisher('tb3_2/cmd_vel', Twist, queue_size=5)
-        self.sub_odom3 = rospy.Subscriber('tb3_2/odom', Odometry, self.getOdometry)
+        
+        self.positions = [Pose() for _ in range(self.num_agents)]
+        self._positions = [Pose() for _ in range(self.num_agents)]
+        self.pub_cmd_vels = [rospy.Publisher(topic, Twist, queue_size=5) for topic in [self.agent_topics[i] + "/cmd_vel" for i in range(self.num_agents)]]
+        self.sub_odoms = [rospy.Subscriber(topic, Odometry, self.getOdometry) for topic in [self.agent_topics[i] + "/odom" for i in range(self.num_agents)]]
         self.reset_proxy = rospy.ServiceProxy('gazebo/reset_simulation', Empty)
         self.unpause_proxy = rospy.ServiceProxy('gazebo/unpause_physics', Empty)
         self.pause_proxy = rospy.ServiceProxy('gazebo/pause_physics', Empty)
         # self.respawn_goal = Respawn()
-        self.cmd_vel1 = 0.15
-        self.cmd_vel2 = 0.15
-        self.cmd_vel3 = 0.15
-        self.ang_vel1 = 0
-        self.ang_vel2 = 0
-        self.ang_vel3 = 0
-        self.goal_y1 = 0.15
-        self.goal_y2 = -0.15
-        self.goal_y3 = 0.15
-        self.yaw1 = 0.0
-        self.yaw2 = 0.0
-        self.yaw3 = 0.0
+        self.cmd_vels = [0.15 for _ in range(self.num_agents)]
+        self.ang_vels = [0.0 for _ in range(self.num_agents)]
+        self.goal_ys = [0.15 for _ in range(self.num_agents)]
+        self.goal_ys[1] = -0.15
+        self.yaws = [0.0 for _ in range(self.num_agents)]
         self.done = False
         self.goal = False
 
@@ -295,23 +281,24 @@ class Env():
             rospy.loginfo("Collision!!")
             reward = -1 # -200
             if scan_topic == "tb3_0/scan":
-                self.pub_cmd_vel1.publish(Twist())
+                self.pub_cmd_vels[0].publish(Twist())
             elif scan_topic == "tb3_1/scan":
-                self.pub_cmd_vel2.publish(Twist())
+                self.pub_cmd_vels[1].publish(Twist())
             elif scan_topic == "tb3_2/scan":
-                self.pub_cmd_vel3.publish(Twist())
+                self.pub_cmd_vels[2].publish(Twist())
             else:
                 pass
 
-        if self.get_goalbox or self.goal:
+        # if self.get_goalbox or self.goal:
+        if self.goal:
             rospy.loginfo("Goal!!")
             reward = 100
             if scan_topic == "tb3_0/scan":
-                self.pub_cmd_vel1.publish(Twist())
+                self.pub_cmd_vels[0].publish(Twist())
             elif scan_topic == "tb3_1/scan":
-                self.pub_cmd_vel2.publish(Twist())
+                self.pub_cmd_vels[1].publish(Twist())
             elif scan_topic == "tb3_2/scan":
-                self.pub_cmd_vel3.publish(Twist())
+                self.pub_cmd_vels[2].publish(Twist())
             else:
                 pass
 
@@ -334,22 +321,22 @@ class Env():
         i = 0.0
         d = 0.0
         y_g_pos = goal_y 
-        y_c_pos = self.position1.y
+        y_c_pos = self.positions[0].y
         p_error = y_g_pos - y_c_pos
-        y_error = 0 - self.yaw1 
+        y_error = 0 - self.yaws[0] 
         ang_error = math.atan2(p_error,0.3)
         error = 1.5 * y_error + ang_error 
         result = p * error
 
         if result < -0.001:
             if result < -0.2:
-                if self.yaw1 < -pi/2:
+                if self.yaws[0] < -pi/2:
                     result = 0.0
                 else:
                     result = -0.6
         if result > 0.001:
             if result > 0.2:
-                if self.yaw1 > pi/2:
+                if self.yaws[0] > pi/2:
                     result = 0.0
                 else:
                     result = 0.6
@@ -358,9 +345,9 @@ class Env():
     def pid_2(self, goal_y): 
         p = 1.0
         y_g_pos = goal_y 
-        y_c_pos = self.position2.y
+        y_c_pos = self.positions[1].y
         p_error = y_g_pos - y_c_pos
-        y_error = 0 - self.yaw2 
+        y_error = 0 - self.yaws[1] 
         ang_error = math.atan2(p_error,0.3)
         error = 1.5 * y_error + ang_error 
         result = p * error
@@ -369,9 +356,9 @@ class Env():
     def pid_3(self, goal_y): 
         p = 1.0
         y_g_pos = goal_y 
-        y_c_pos = self.position3.y
+        y_c_pos = self.positions[2].y
         p_error = y_g_pos - y_c_pos
-        y_error = 0 - self.yaw3 
+        y_error = 0 - self.yaws[2] 
         ang_error = math.atan2(p_error,0.3)
         error = 1.5 * y_error + ang_error 
         result = p * error
@@ -379,113 +366,131 @@ class Env():
 
     def set_vel_cmd(self, vel_cmd, scan_topic):
         if scan_topic == "tb3_0/scan":
-            self.cmd_vel1 = vel_cmd
+            self.cmd_vels[0] = vel_cmd
         elif scan_topic == "tb3_1/scan":
-            self.cmd_vel2 = vel_cmd
+            self.cmd_vels[1] = vel_cmd
         elif scan_topic == "tb3_2/scan":
-            self.cmd_vel3 = vel_cmd
+            self.cmd_vels[2] = vel_cmd
         else:
             pass
 
     def set_ang_vel(self, ang_vel, scan_topic):
         if scan_topic == "tb3_0/scan":
-            self.ang_vel1 = ang_vel
+            self.ang_vels[0] = ang_vel
         elif scan_topic == "tb3_1/scan":
-            self.ang_vel2 = ang_vel
+            self.ang_vels[1] = ang_vel
         elif scan_topic == "tb3_2/scan":
-            self.ang_vel3 = ang_vel
+            self.ang_vels[2] = ang_vel
         else:
             pass
 
     def set_goal_y(self, goal_y, scan_topic):
         if scan_topic == "tb3_0/scan":
-            self.goal_y1 = goal_y
+            self.goal_ys[0] = goal_y
         elif scan_topic == "tb3_1/scan":
-            self.goal_y2 = goal_y
+            self.goal_ys[1] = goal_y
         elif scan_topic == "tb3_2/scan":
-            self.goal_y3 = goal_y
+            self.goal_ys[2] = goal_y
         else:
             pass
 
     def turn_left_f(self, scan_topic):
         self.set_vel_cmd(0.20, scan_topic)
         self.set_goal_y(0.15, scan_topic)
+        return "0"
 
     def turn_left_h(self, scan_topic):
         self.set_vel_cmd(0.15, scan_topic)
         self.set_goal_y(0.15, scan_topic)
+        return "1"
 
     def turn_left_m(self, scan_topic):
         self.set_vel_cmd(0.1, scan_topic)
         self.set_goal_y(0.15, scan_topic)
+        return "2"
 
     def turn_left_l(self, scan_topic):
         self.set_vel_cmd(0.05, scan_topic)
         self.set_goal_y(0.15, scan_topic)
+        return "3"
 
     def turn_right_f(self, scan_topic):
         self.set_vel_cmd(0.20, scan_topic)
         self.set_goal_y(-0.15, scan_topic)
+        return "4"
 
     def turn_right_h(self, scan_topic):
         self.set_vel_cmd(0.15, scan_topic)
         self.set_goal_y(-0.15, scan_topic)
+        return "5"
 
     def turn_right_m(self, scan_topic):
         self.set_vel_cmd(0.1, scan_topic)
         self.set_goal_y(-0.15, scan_topic)
+        return "6"
 
     def turn_right_l(self, scan_topic):
         self.set_vel_cmd(0.05, scan_topic)
         self.set_goal_y(-0.15, scan_topic)
+        return "7"
 
     def stop(self, scan_topic):
         self.set_vel_cmd(0.0, scan_topic)
+        return "8"
 
-    def step(self, action, scan_topic):
-        max_angular_vel = 1.0 # 1.5
-        # ang_vel = ((self.action_size - 1)/2 - action) * max_angular_vel * 0.5
-        actions = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
-        actions[action](scan_topic)
+    def step(self, actions, agent_topics):
+        action_list = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
+        
+        vel_cmds = [Twist() for _ in range(self.num_agents)]
 
-        vel_cmd1 = Twist()
-        vel_cmd2 = Twist()
-        vel_cmd3 = Twist()
+        next_states = [0 for _ in range(self.num_agents)]
+        rewards = [0 for _ in range(self.num_agents)]
+        dones = [0 for _ in range(self.num_agents)]
+        next_pxes = [0 for _ in range(self.num_agents)]
 
-        if scan_topic == "tb3_0/scan":
-            vel_cmd1.linear.x = self.cmd_vel1 
-            vel_cmd1.angular.z = self.pid(self.goal_y1) # here
-        elif scan_topic == "tb3_1/scan":
-            vel_cmd2.linear.x = self.cmd_vel2
-            vel_cmd2.angular.z = self.pid_2(-0.15) # self.ang_vel2
-        elif scan_topic == "tb3_2/scan":
-            vel_cmd3.linear.x = self.cmd_vel3
-            vel_cmd3.angular.z = self.pid_3(0.15) # self.ang_vel3 
-        else:
-            pass
+        for idx in range(self.num_agents):
+            action_list[actions[idx]](agent_topics[idx])
+            print(action_list[actions[idx]](agent_topics[idx]), actions[idx], agent_topics[idx])
 
-        if scan_topic == "tb3_0/scan":
-            self.pub_cmd_vel1.publish(vel_cmd1)
-        elif scan_topic == "tb3_1/scan":
-            self.pub_cmd_vel2.publish(vel_cmd2)
-        elif scan_topic == "tb3_2/scan":
-            self.pub_cmd_vel3.publish(vel_cmd3)
-        else:
-            pass
+            vel_cmds[idx].linear.x = self.cmd_vels[idx]
+            # vel_cmds[idx].angular.z = self.pid(self.goal_ys[idx])
 
-        data = None
-        while data is None:
-            try:
-                data = rospy.wait_for_message(scan_topic, LaserScan, timeout=5)
-            except:
+
+            if agent_topics == "tb3_0/scan":
+            #     vel_cmd1.linear.x = self.cmd_vel1 
+                vel_cmds[idx].angular.z = self.pid(self.goal_ys[idx]) # here
+            elif agent_topics == "tb3_1/scan":
+            #     vel_cmd2.linear.x = self.cmd_vel2
+                vel_cmds[idx].angular.z = self.pid_2(-0.15) # self.ang_vel2
+            elif agent_topics == "tb3_2/scan":
+            #     vel_cmd3.linear.x = self.cmd_vel3
+                vel_cmds[idx].angular.z = self.pid_3(0.15) # self.ang_vel3 
+            else:
                 pass
+            print(idx, vel_cmds[idx].linear.x, vel_cmds[idx].angular.z)
+            self.pub_cmd_vels[idx].publish(vel_cmds[idx])
 
-        time.sleep(0.1)
+            # if agent_topics == "tb3_0/scan":
+            #     self.pub_cmd_vel1.publish(vel_cmd1)
+            # elif agent_topics == "tb3_1/scan":
+            #     self.pub_cmd_vel2.publish(vel_cmd2)
+            # elif agent_topics == "tb3_2/scan":
+            #     self.pub_cmd_vel3.publish(vel_cmd3)
+            # else:
+            #     pass
 
-        state, done, px = self.getState(data, scan_topic)
-        reward = self.setReward(state, done, action, scan_topic)
+            data = None
+            while data is None:
+                try:
+                    data = rospy.wait_for_message(agent_topics[idx], LaserScan, timeout=5)
+                except:
+                    pass
 
-        return np.asarray(state), reward, done, px
+            next_states[idx], dones[idx], next_pxes[idx] = self.getState(data, agent_topics[idx])
+            rewards[idx] = self.setReward(next_states[idx], dones[idx], actions[idx], agent_topics[idx])
+
+        # return np.asarray(state), reward, done, px
+        return np.asarray(next_states), rewards, dones, next_pxes
 
     def reset(self):
         rospy.wait_for_service('gazebo/reset_simulation')
@@ -513,11 +518,11 @@ class Env():
             except:
                 pass
 
-        if self.initGoal:
-            # self.goal_x, self.goal_y = self.respawn_goal.getPosition()
-            self.goal_x = 5.0
-            self.goal_y = 0.0
-            self.initGoal = False
+        # if self.initGoal:
+        #     # self.goal_x, self.goal_y = self.respawn_goal.getPosition()
+        #     self.goal_x = 5.0
+        #     self.goal_y = 0.0
+        #     self.initGoal = False
 
         self.goal_distance1 = self.getGoalDistace("tb3_0/scan")
         self.goal_distance2 = self.getGoalDistace("tb3_1/scan")
@@ -527,4 +532,7 @@ class Env():
         state2, done2, px2 = self.getState(data2, "tb3_1/scan")
         state3, done3, px3 = self.getState(data3, "tb3_2/scan")
 
-        return np.asarray(state1), np.asarray(state2), np.asarray(state3), px1, px2, px3
+        states = [state1, state2, state3]
+        pxes = [px1, px2, px3]
+
+        return np.asarray(states), pxes
