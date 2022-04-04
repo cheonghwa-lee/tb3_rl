@@ -30,243 +30,212 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 # from respawnGoal import Respawn
 
 class Env():
-    def __init__(self, action_size):
-        self.num_agents = 3
+    def __init__(self, num_agents, action_size):
+        self.num_agents = num_agents
         self.agent_topics = ["tb3_{}".format(i) for i in range(self.num_agents)]
-
-        self.goal_x = 5.0
-        self.goal_y = 0
-        # self.initGoal = True
-        # self.get_goalbox = False
-
-        self.headings = [0.0 for _ in range(self.num_agents)]
-        
         self.action_size = action_size
-        
-        self.positions = [Pose() for _ in range(self.num_agents)]
-        self._positions = [Pose() for _ in range(self.num_agents)]
+
         self.pub_cmd_vels = [rospy.Publisher(topic, Twist, queue_size=5) for topic in [self.agent_topics[i] + "/cmd_vel" for i in range(self.num_agents)]]
         self.sub_odoms = [rospy.Subscriber(topic, Odometry, self.getOdometry) for topic in [self.agent_topics[i] + "/odom" for i in range(self.num_agents)]]
         self.reset_proxy = rospy.ServiceProxy('gazebo/reset_simulation', Empty)
         self.unpause_proxy = rospy.ServiceProxy('gazebo/unpause_physics', Empty)
         self.pause_proxy = rospy.ServiceProxy('gazebo/pause_physics', Empty)
-        # self.respawn_goal = Respawn()
-        self.cmd_vels = [0.15 for _ in range(self.num_agents)]
-        self.ang_vels = [0.0 for _ in range(self.num_agents)]
+
+        self.goal_xs = [5.0 for _ in range(self.num_agents)]
         self.goal_ys = [0.15 for _ in range(self.num_agents)]
         self.goal_ys[1] = -0.15
+        
+        self.positions = [Pose() for _ in range(self.num_agents)]
         self.yaws = [0.0 for _ in range(self.num_agents)]
+        self.headings = [0.0 for _ in range(self.num_agents)]
+        
+        self.cmd_vels = [0.15 for _ in range(self.num_agents)]
+        self.ang_vels = [0.0 for _ in range(self.num_agents)]
+
         self.done = False
         self.goal = False
 
-    def getGoalDistace(self, scan_topic):
-        if scan_topic == "tb3_0/scan":
-            # goal_distance = round(math.hypot(self.goal_x - self.position1.x, self.goal_y - self.position1.y), 2)
-            goal_distance = round(math.hypot(self.goal_x - self.position1.x, 0), 2)
-        elif scan_topic == "tb3_1/scan":
-            goal_distance = round(math.hypot(self.goal_x - self.position2.x, self.goal_y - self.position2.y), 2)
-        elif scan_topic == "tb3_2/scan":
-            goal_distance = round(math.hypot(self.goal_x - self.position3.x, self.goal_y - self.position3.y), 2)
-        else:
-            pass
-        return goal_distance
+        # self.initGoal = True
+        # self.get_goalbox = False
+        # self.respawn_goal = Respawn()
+
+    def getGoalDistance(self):
+        goal_distances = []
+        for idx in range(self.num_agents):
+            goal_distances.append(round(math.hypot(self.goal_xs[idx] - self.positions[idx].x, 0), 2))
+        return goal_distances
 
     def getOdometry(self, odom):
         if odom.header.frame_id == "tb3_0/odom":
-            self.position1 = odom.pose.pose.position
-            self._position1 = odom.pose.pose.position
-        elif odom.header.frame_id == "tb3_1/odom":
-            self.position2 = odom.pose.pose.position
-            self._position2 = odom.pose.pose.position
-        elif odom.header.frame_id == "tb3_2/odom":
-            self.position3 = odom.pose.pose.position
-            self._position3 = odom.pose.pose.position
-        else:
-            pass
+            self.positions[0] = odom.pose.pose.position
 
-        if odom.header.frame_id == "tb3_0/odom":
             orientation = odom.pose.pose.orientation
             orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
-            _, _, yaw = euler_from_quaternion(orientation_list)
-            self.yaw1 = yaw # by 
-        elif odom.header.frame_id == "tb3_1/odom":
-            orientation = odom.pose.pose.orientation
-            orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
-            _, _, yaw = euler_from_quaternion(orientation_list)
-            self.yaw2 = yaw # by 
-        elif odom.header.frame_id == "tb3_2/odom":
-            orientation = odom.pose.pose.orientation
-            orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
-            _, _, yaw = euler_from_quaternion(orientation_list)
-            self.yaw3 = yaw # by 
-        else:
-            pass
-        
-        if odom.header.frame_id == "tb3_0/odom":
-            goal_angle1 = math.atan2(self.goal_y - self.position1.y, self.goal_x - self.position1.x)
-        elif odom.header.frame_id == "tb3_1/odom":
-            goal_angle2 = math.atan2(self.goal_y - self.position2.y, self.goal_x - self.position2.x)
-        elif odom.header.frame_id == "tb3_2/odom":
-            goal_angle3 = math.atan2(self.goal_y - self.position3.y, self.goal_x - self.position3.x)
-        else:
-            pass
+            _, _, self.yaws[0] = euler_from_quaternion(orientation_list)
 
-        if odom.header.frame_id == "tb3_0/odom":
-            heading = goal_angle1 - self.yaw1
+            goal_angle = math.atan2(self.goal_ys[0] - self.positions[0].y, self.goal_xs[0] - self.positions[0].x)
+            heading = goal_angle - self.yaws[0]
             if heading > pi:
                 heading -= 2 * pi
             elif heading < -pi:
                 heading += 2 * pi
-            self.heading1 = round(heading, 2)
+            self.headings[0] = round(heading, 2)
         elif odom.header.frame_id == "tb3_1/odom":
-            heading = goal_angle2 - self.yaw2
+            self.positions[1] = odom.pose.pose.position
+
+            orientation = odom.pose.pose.orientation
+            orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
+            _, _, self.yaws[1] = euler_from_quaternion(orientation_list)
+
+            goal_angle = math.atan2(self.goal_ys[1] - self.positions[1].y, self.goal_xs[1] - self.positions[1].x)
+            heading = goal_angle - self.yaws[1]
             if heading > pi:
                 heading -= 2 * pi
             elif heading < -pi:
                 heading += 2 * pi
-            self.heading2 = round(heading, 2)
+            self.headings[1] = round(heading, 2)
         elif odom.header.frame_id == "tb3_2/odom":
-            heading = goal_angle3 - self.yaw3
+            self.positions[2] = odom.pose.pose.position
+
+            orientation = odom.pose.pose.orientation
+            orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
+            _, _, self.yaws[2] = euler_from_quaternion(orientation_list)
+
+            goal_angle = math.atan2(self.goal_ys[2] - self.positions[2].y, self.goal_xs[2] - self.positions[2].x)
+            heading = goal_angle - self.yaws[2]
             if heading > pi:
                 heading -= 2 * pi
             elif heading < -pi:
                 heading += 2 * pi
-            self.heading3 = round(heading, 2)
+            self.headings[2] = round(heading, 2)
         else:
             pass
 
-    def getState(self, scan, scan_topic):
-        scan_range = []
-        if scan_topic == "tb3_0/scan":
-            heading = self.heading1
-        elif scan_topic == "tb3_1/scan":
-            heading = self.heading2
-        elif scan_topic == "tb3_2/scan":
-            heading = self.heading3
-        else:
-            pass
-
-        min_range = 0.13 # 0.13
-        done = False
-        if scan_topic == "tb3_0/scan":
-            self.done = False
-            self.goal = False
-        elif scan_topic == "tb3_1/scan":
-            pass
-        elif scan_topic == "tb3_2/scan":
-            pass
-        else:
-            pass
-
-        for i in range(len(scan.ranges)):
-            if scan.ranges[i] == float('Inf'):
-                scan_range.append(3.5)
-            elif np.isnan(scan.ranges[i]):
-                scan_range.append(0)
-            else:
-                scan_range.append(scan.ranges[i])
-
-        obstacle_min_range = round(min(scan_range), 2)
-        obstacle_angle = np.argmin(scan_range)
-
-        distance_between1 = math.sqrt((self.position1.x - self.position2.x) ** 2 + (self.position1.y - self.position2.y) ** 2)
-        distance_between2 = math.sqrt((self.position1.x - self.position3.x) ** 2 + (self.position1.y - self.position3.y) ** 2)
-        distance_between3 = math.sqrt((self.position3.x - self.position2.x) ** 2 + (self.position3.y - self.position2.y) ** 2)
-        distance_between = min(distance_between1, distance_between2, distance_between3)
-        
-        state_rl = []
-        if scan_topic == "tb3_0/scan":
-            x12 = round(self.position1.x - self.position2.x, 2)
-            if x12 > 1.0:
-                x12 = 1.0
-            elif x12 < -1.0:
-                x12 = -1.0
-            else:
-                pass
-            y12 = round(self.position1.y - self.position2.y, 2)
-            h12 = round(self.heading1 - self.heading2, 2)
-            x13 = round(self.position1.x - self.position3.x, 2)
-            if x13 > 1.0:
-                x13 = 1.0
-            elif x13 < -1.0:
-                x13 = -1.0
-            else:
-                pass
-            y13 = round(self.position1.y - self.position3.y, 2)
-            h13 = round(self.heading1 - self.heading3, 2)
-            px = self.position1.x
-            py = round(self.position1.y, 2)
-            ph = round(self.heading1, 2)
-            state_rl = [py, ph, x12, y12, h12, x13, y13, h13]
-            # print(state_rl)
-        elif scan_topic == "tb3_1/scan":
-            x21 = round(self.position2.x - self.position1.x, 2)
-            y21 = round(self.position2.y - self.position1.y, 2)
-            h21 = round(self.heading2 - self.heading1, 2)
-            x23 = round(self.position2.x - self.position3.x, 2)
-            y23 = round(self.position2.y - self.position3.y, 2)
-            h23 = round(self.heading2 - self.heading3, 2)
-            px = self.position2.x
-            py = round(self.position2.y, 2)
-            ph = round(self.heading2, 2)
-            state_rl = [py, ph, x21, y21, h21, x23, y23, h23]
-        elif scan_topic == "tb3_2/scan":
-            x31 = round(self.position3.x - self.position1.x, 2)
-            y31 = round(self.position3.y - self.position1.y, 2)
-            h31 = round(self.heading3 - self.heading1, 2)
-            x32 = round(self.position3.x - self.position2.x, 2)
-            y32 = round(self.position3.y - self.position2.y, 2)
-            h32 = round(self.heading3 - self.heading2, 2)
-            px = self.position3.x
-            py = round(self.position3.y, 2)
-            ph = round(self.heading3, 2)
-            state_rl = [py, ph, x31, y31, h31, x32, y32, h32]
-        else:
-            pass
-
-        exit1 = self.position1.y < -0.25 or self.position1.y > 0.25
-        exit2 = self.position2.y < -0.25 or self.position2.y > 0.25
-        exit3 = self.position3.y < -0.25 or self.position3.y > 0.25
-        exit_ = exit1 or exit2 or exit3
-
-        goal_done = self.position1.x > 5.0 # 22-01-05 
-
-        if (min_range > min(scan_range) > 0) or distance_between < 0.21 or exit_ or goal_done:
-            # done = True
+    def getState(self, scan):
+        for idx in range(self.num_agents):
+            scan_range = []
+            heading = self.headings[idx]
+            min_range = 0.13 # 0.13
+            done = False
             if scan_topic == "tb3_0/scan":
-                done = True
-                self.done = True
+                self.done = False
+                self.goal = False
             elif scan_topic == "tb3_1/scan":
                 pass
             elif scan_topic == "tb3_2/scan":
                 pass
             else:
                 pass
+
+            for i in range(len(scan.ranges)):
+                if scan.ranges[i] == float('Inf'):
+                    scan_range.append(3.5)
+                elif np.isnan(scan.ranges[i]):
+                    scan_range.append(0)
+                else:
+                    scan_range.append(scan.ranges[i])
+
+            obstacle_min_range = round(min(scan_range), 2)
+            obstacle_angle = np.argmin(scan_range)
+
+            distance_between1 = math.sqrt((self.position1.x - self.position2.x) ** 2 + (self.position1.y - self.position2.y) ** 2)
+            distance_between2 = math.sqrt((self.position1.x - self.position3.x) ** 2 + (self.position1.y - self.position3.y) ** 2)
+            distance_between3 = math.sqrt((self.position3.x - self.position2.x) ** 2 + (self.position3.y - self.position2.y) ** 2)
+            distance_between = min(distance_between1, distance_between2, distance_between3)
             
-        if scan_topic == "tb3_0/scan":
-            # current_distance = round(math.hypot(self.goal_x - self.position1.x, self.goal_y - self.position1.y),2)
-            current_distance = round(math.hypot(self.goal_x - self.position1.x, 0),2)
-            # print(current_distance)
-        elif scan_topic == "tb3_1/scan":
-            # current_distance = round(math.hypot(self.goal_x - self.position2.x, self.goal_y - self.position2.y),2)
-            current_distance = round(math.hypot(self.goal_x - self.position2.x, 0),2)
-        elif scan_topic == "tb3_2/scan":
-            # current_distance = round(math.hypot(self.goal_x - self.position3.x, self.goal_y - self.position3.y),2)
-            current_distance = round(math.hypot(self.goal_x - self.position3.x, 0),2)
-        else:
-            pass
-
-        # if current_distance < 0.2 or goal_done:
-        if goal_done:
+            state_rl = []
             if scan_topic == "tb3_0/scan":
-                self.get_goalbox = True
-                self.goal = True
+                x12 = round(self.position1.x - self.position2.x, 2)
+                if x12 > 1.0:
+                    x12 = 1.0
+                elif x12 < -1.0:
+                    x12 = -1.0
+                else:
+                    pass
+                y12 = round(self.position1.y - self.position2.y, 2)
+                h12 = round(self.heading1 - self.heading2, 2)
+                x13 = round(self.position1.x - self.position3.x, 2)
+                if x13 > 1.0:
+                    x13 = 1.0
+                elif x13 < -1.0:
+                    x13 = -1.0
+                else:
+                    pass
+                y13 = round(self.position1.y - self.position3.y, 2)
+                h13 = round(self.heading1 - self.heading3, 2)
+                px = self.position1.x
+                py = round(self.position1.y, 2)
+                ph = round(self.heading1, 2)
+                state_rl = [py, ph, x12, y12, h12, x13, y13, h13]
+                # print(state_rl)
             elif scan_topic == "tb3_1/scan":
-                pass
+                x21 = round(self.position2.x - self.position1.x, 2)
+                y21 = round(self.position2.y - self.position1.y, 2)
+                h21 = round(self.heading2 - self.heading1, 2)
+                x23 = round(self.position2.x - self.position3.x, 2)
+                y23 = round(self.position2.y - self.position3.y, 2)
+                h23 = round(self.heading2 - self.heading3, 2)
+                px = self.position2.x
+                py = round(self.position2.y, 2)
+                ph = round(self.heading2, 2)
+                state_rl = [py, ph, x21, y21, h21, x23, y23, h23]
             elif scan_topic == "tb3_2/scan":
-                pass
+                x31 = round(self.position3.x - self.position1.x, 2)
+                y31 = round(self.position3.y - self.position1.y, 2)
+                h31 = round(self.heading3 - self.heading1, 2)
+                x32 = round(self.position3.x - self.position2.x, 2)
+                y32 = round(self.position3.y - self.position2.y, 2)
+                h32 = round(self.heading3 - self.heading2, 2)
+                px = self.position3.x
+                py = round(self.position3.y, 2)
+                ph = round(self.heading3, 2)
+                state_rl = [py, ph, x31, y31, h31, x32, y32, h32]
             else:
                 pass
+
+            exit1 = self.position1.y < -0.25 or self.position1.y > 0.25
+            exit2 = self.position2.y < -0.25 or self.position2.y > 0.25
+            exit3 = self.position3.y < -0.25 or self.position3.y > 0.25
+            exit_ = exit1 or exit2 or exit3
+
+            goal_done = self.position1.x > 5.0 # 22-01-05 
+
+            if (min_range > min(scan_range) > 0) or distance_between < 0.21 or exit_ or goal_done:
+                # done = True
+                if scan_topic == "tb3_0/scan":
+                    done = True
+                    self.done = True
+                elif scan_topic == "tb3_1/scan":
+                    pass
+                elif scan_topic == "tb3_2/scan":
+                    pass
+                else:
+                    pass
+                
+            if scan_topic == "tb3_0/scan":
+                # current_distance = round(math.hypot(self.goal_x - self.position1.x, self.goal_y - self.position1.y),2)
+                current_distance = round(math.hypot(self.goal_x - self.position1.x, 0),2)
+                # print(current_distance)
+            elif scan_topic == "tb3_1/scan":
+                # current_distance = round(math.hypot(self.goal_x - self.position2.x, self.goal_y - self.position2.y),2)
+                current_distance = round(math.hypot(self.goal_x - self.position2.x, 0),2)
+            elif scan_topic == "tb3_2/scan":
+                # current_distance = round(math.hypot(self.goal_x - self.position3.x, self.goal_y - self.position3.y),2)
+                current_distance = round(math.hypot(self.goal_x - self.position3.x, 0),2)
+            else:
+                pass
+
+            # if current_distance < 0.2 or goal_done:
+            if goal_done:
+                if scan_topic == "tb3_0/scan":
+                    self.get_goalbox = True
+                    self.goal = True
+                elif scan_topic == "tb3_1/scan":
+                    pass
+                elif scan_topic == "tb3_2/scan":
+                    pass
+                else:
+                    pass
         return [current_distance] + state_rl , done, px # [0, 0] + [round(heading, 2), round(current_distance, 2)]
 
     def setReward(self, state, done, action, scan_topic):
@@ -304,14 +273,15 @@ class Env():
 
             # self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True) # 22-01-07
 
-            if scan_topic == "tb3_0/scan":
-                self.goal_distance1 = self.getGoalDistace(scan_topic)
-            elif scan_topic == "tb3_1/scan":
-                self.goal_distance2 = self.getGoalDistace(scan_topic)
-            elif scan_topic == "tb3_2/scan":
-                self.goal_distance3 = self.getGoalDistace(scan_topic)
-            else:
-                pass
+            # if scan_topic == "tb3_0/scan":
+            #     self.goal_distance1 = self.getGoalDistance(scan_topic)
+            # elif scan_topic == "tb3_1/scan":
+            #     self.goal_distance2 = self.getGoalDistance(scan_topic)
+            # elif scan_topic == "tb3_2/scan":
+            #     self.goal_distance3 = self.getGoalDistance(scan_topic)
+            # else:
+            #     pass
+            self.goal_distances = self.getGoalDistance()
 
             self.get_goalbox = False
         return reward
@@ -499,6 +469,14 @@ class Env():
         except (rospy.ServiceException) as e:
             print("gazebo/reset_simulation service call failed")
 
+        # data = [None for _ in range(self.num_agents)]
+        # while data is None:
+        #     try:
+        #         for idx in range(self.num_agents):
+        #             data[idx] = rospy.wait_for_message(self.agent_topics[idx], LaserScan, timeout=5)
+        #     except:
+        #         pass
+        
         data1 = None
         while data1 is None:
             try:
@@ -519,20 +497,23 @@ class Env():
                 pass
 
         # if self.initGoal:
-        #     # self.goal_x, self.goal_y = self.respawn_goal.getPosition()
-        #     self.goal_x = 5.0
-        #     self.goal_y = 0.0
-        #     self.initGoal = False
+            # self.goal_x, self.goal_y = self.respawn_goal.getPosition()
+            # self.goal_x = 5.0
+            # self.goal_y = 0.0
+            # self.initGoal = False
 
-        self.goal_distance1 = self.getGoalDistace("tb3_0/scan")
-        self.goal_distance2 = self.getGoalDistace("tb3_1/scan")
-        self.goal_distance3 = self.getGoalDistace("tb3_2/scan")
+        # self.goal_distance1 = self.getGoalDistance("tb3_0/scan")
+        # self.goal_distance2 = self.getGoalDistance("tb3_1/scan")
+        # self.goal_distance3 = self.getGoalDistance("tb3_2/scan")
+        self.goal_distances = self.getGoalDistance()
 
-        state1, done1, px1 = self.getState(data1, "tb3_0/scan")
-        state2, done2, px2 = self.getState(data2, "tb3_1/scan")
-        state3, done3, px3 = self.getState(data3, "tb3_2/scan")
+        data = [data1, data2, data3]
+        # state1, done1, px1 = self.getState(data1, "tb3_0/scan")
+        # state2, done2, px2 = self.getState(data2, "tb3_1/scan")
+        # state3, done3, px3 = self.getState(data3, "tb3_2/scan")
+        states, dones, pxes = self.getState(data)
 
-        states = [state1, state2, state3]
-        pxes = [px1, px2, px3]
+        # states = [state1, state2, state3]
+        # pxes = [px1, px2, px3]
 
         return np.asarray(states), pxes
