@@ -72,7 +72,6 @@ class Env():
         idx = int(odom.header.frame_id[4])
 
         self.positions[idx] = odom.pose.pose.position
-
         orientation = odom.pose.pose.orientation
         orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
         _, _, self.yaws[idx] = euler_from_quaternion(orientation_list)
@@ -210,9 +209,6 @@ class Env():
 
     def set_vel_cmd(self, vel_cmd, idx):
         self.cmd_vels[idx] = vel_cmd
-
-    def set_ang_vel(self, ang_vel, idx):
-        self.ang_vels[idx] = ang_vel
 
     def set_goal_y(self, goal_y, idx):
         self.goal_ys[idx] = goal_y

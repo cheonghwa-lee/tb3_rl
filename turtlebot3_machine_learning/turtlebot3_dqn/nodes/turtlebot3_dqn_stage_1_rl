@@ -154,11 +154,11 @@ if __name__ == '__main__':
     num_agents = 3
     agent_topics = ["tb3_{}".format(i) for i in range(num_agents)]
     
-    rospy.init_node('turtlebot3_dqn_stage_1')
+    rospy.init_node('multiagent_turtlebot3_dqn_1')
     pub_results = [rospy.Publisher(topic + '/result', Float32MultiArray, queue_size=5) for topic in agent_topics]
     pub_get_actions = [rospy.Publisher(topic + '/get_action', Float32MultiArray, queue_size=5) for topic in agent_topics]
-    results = [Float32MultiArray() for _ in agent_topics] 
-    get_actions = [Float32MultiArray() for _ in agent_topics]
+    results = [Float32MultiArray() for _ in range(num_agents)] 
+    get_actions = [Float32MultiArray() for _ in range(num_agents)]
     
     for learn in range(LEARN):
         state_size = 9 # 12
@@ -167,7 +167,8 @@ if __name__ == '__main__':
         agents = [ReinforceAgent(state_size, action_size, topic) for topic in agent_topics]
         env = Env(agents, action_size)
 
-        scores, episodes = [], []
+        scores = [] 
+        episodes = []
         global_step = 0
         start_time = time.time()
 
