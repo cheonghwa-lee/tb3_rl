@@ -1,0 +1,316 @@
+#!/usr/bin/env python
+#################################################################################
+# Copyright 2018 ROBOTIS CO., LTD.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#################################################################################
+
+# Authors: Gilbert #
+
+import rospy
+import os
+import json
+import numpy as np
+import random
+import time
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from collections import deque
+from std_msgs.msg import Float32MultiArray
+from src.turtlebot3_dqn.environment_dqn import Env
+from keras.models import Sequential, load_model
+from keras.optimizers import RMSprop
+from keras.layers import Dense, Dropout, Activation
+
+import csv
+
+import datetime
+
+LEARN = 50 # 10
+EPISODES = 305 # 505
+METRIC_NAME = "ubuntu_A_2"
+
+class ReinforceAgent():
+    def __init__(self, state_size, action_size, topic):
+        self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
+        self.dirPath = os.path.dirname(os.path.realpath(__file__))
+        self.dirPath = self.dirPath.replace('turtlebot3_dqn/nodes', 'turtlebot3_dqn/save_model/stage_1_')
+        self.result = Float32MultiArray()
+
+        self.load_model = False
+        self.load_episode = 0
+        self.state_size = state_size
+        self.action_size = action_size
+        self.episode_step = 6000
+        self.target_update = 2000
+        self.discount_factor = 0.99
+        self.learning_rate = 0.00025
+        self.epsilon = 1.0 # 1.0
+        self.epsilon_decay = 0.99 # 0.99
+        self.epsilon_min = 0.05
+        self.batch_size = 64
+        self.train_start = 64
+        self.memory = deque(maxlen=1000000)
+
+        # self.q_value = np.zeros(self.action_size)
+
+        # self.model = self.buildModel()
+        # self.target_model = self.buildModel()
+
+        self.model_actor = self.buildModel_actor()
+        # self.target_model_actor = self.buildModel_actor()
+
+        self.model_critic = self.buildModel_critic()
+        # self.target_model_critic = self.buildModel_actor()
+
+        # self.updateTargetModel()
+
+        if self.load_model:
+            self.model_actor.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
+            self.model_critic.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
+
+            with open(self.dirPath+str(self.load_episode)+'.json') as outfile:
+                param = json.load(outfile)
+                self.epsilon = param.get('epsilon')
+
+    # def buildModel(self):
+    #     model = Sequential()
+    #     dropout = 0.2
+
+    #     model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
+    #     model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
+    #     model.add(Dropout(dropout))
+
+    #     model.add(Dense(self.action_size, kernel_initializer='lecun_uniform'))
+    #     model.add(Activation('linear'))
+    #     model.compile(loss='mse', optimizer=RMSprop(lr=self.learning_rate, rho=0.9, epsilon=1e-06))
+    #     model.summary()
+
+    #     return model
+
+    def buildModel_actor(self):
+        model = Sequential()
+        dropout = 0.2
+
+        model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dropout(dropout))
+
+        model.add(Dense(self.action_size, kernel_initializer='lecun_uniform'))
+        model.add(Activation('softmax'))
+        model.compile(loss='categorical_crossentropy', optimizer=RMSprop(lr=self.learning_rate, rho=0.9, epsilon=1e-06))
+        model.summary()
+
+        return model
+
+    def buildModel_critic(self):
+        model = Sequential()
+        dropout = 0.2
+
+        model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dropout(dropout))
+
+        model.add(Dense(1, kernel_initializer='lecun_uniform'))
+        # model.add(Activation('softmax'))
+        model.compile(loss='mse', optimizer=RMSprop(lr=self.learning_rate, rho=0.9, epsilon=1e-06))
+        model.summary()
+
+        return model
+
+    def getQvalue(self, reward, next_target, done):
+        if done:
+            return reward
+        else:
+            return reward + self.discount_factor * np.amax(next_target)
+
+    def updateTargetModel(self):
+        self.target_model_actor.set_weights(self.model_actor.get_weights())
+        self.target_model_critic.set_weights(self.model_critic.get_weights())
+
+    # def getAction(self, state):
+    #     rand = np.random.rand()
+    #     if  rand <= self.epsilon:
+    #         self.q_value = np.zeros(self.action_size)
+    #         return random.randrange(self.action_size)
+    #         # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
+    #         # return rand_choice
+    #     else:
+    #         q_value = self.model.predict(state.reshape(1, len(state)))
+    #         self.q_value = q_value
+    #         return np.argmax(q_value[0])
+
+    def getAction(self, state):
+        # rand = np.random.rand()
+        # self.q_value = np.zeros(self.action_size)
+        # return random.randrange(self.action_size)
+        # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
+        # return rand_choice
+        q_value = self.model_actor.predict(state.reshape(1, len(state)))
+        self.q_value = q_value
+        # print("tlqkf", q_value)
+        action = np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
+        return action
+
+    def appendMemory(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+
+    def trainModel(self, target=False):
+        mini_batch = random.sample(self.memory, self.batch_size)
+        X_batch = np.empty((0, self.state_size), dtype=np.float64)
+        Y_batch = np.empty((0, 1), dtype=np.float64)
+        Y_batch_actor = np.empty((0, self.action_size), dtype=np.float64)
+
+        for i in range(self.batch_size):
+            states = mini_batch[i][0]
+            actions = mini_batch[i][1]
+            rewards = mini_batch[i][2]
+            next_states = mini_batch[i][3]
+            dones = mini_batch[i][4]
+
+            q_value = self.model_critic.predict(states.reshape(1, len(states)))
+            self.q_value = q_value
+
+            # if target:
+            #     next_target = self.target_model.predict(next_states.reshape(1, len(next_states)))
+            # else:
+            #     next_target = self.model.predict(next_states.reshape(1, len(next_states)))
+            
+            next_target = self.model_critic.predict(next_states.reshape(1, len(next_states)))
+
+            next_q_value = self.getQvalue(rewards, next_target, dones)
+            
+            X_batch = np.append(X_batch, np.array([states.copy()]), axis=0)
+            # Y_sample = q_value.copy()
+
+            # Y_sample[0][actions] = next_q_value
+            Y_batch = np.append(Y_batch, np.array([[next_q_value]]), axis=0)
+
+            diff = rewards + self.discount_factor * next_target - q_value
+            action_probs = self.model_actor.predict(states.reshape(1, len(states)))
+            log_probs = np.log(action_probs)
+            Y_batch_actor = np.append(Y_batch_actor, np.array(-log_probs * diff), axis=0)
+
+            if dones:
+                X_batch = np.append(X_batch, np.array([next_states.copy()]), axis=0)
+                Y_batch = np.append(Y_batch, np.array([[rewards] * 1]), axis=0)
+                Y_batch_actor = np.append(Y_batch_actor, np.array(-log_probs * diff), axis=0)
+            
+        print("UPDATE!@#$%^&*()")
+        self.model_critic.fit(X_batch, Y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
+        self.model_actor.fit(X_batch, Y_batch_actor, batch_size=self.batch_size, epochs=1, verbose=0)
+
+if __name__ == '__main__':
+    num_agents = 3
+    agent_topics = ["tb3_{}".format(i) for i in range(num_agents)]
+    
+    rospy.init_node('multiagent_turtlebot3_dqn_1')
+    pub_results = [rospy.Publisher(topic + '/result', Float32MultiArray, queue_size=5) for topic in agent_topics]
+    pub_get_actions = [rospy.Publisher(topic + '/get_action', Float32MultiArray, queue_size=5) for topic in agent_topics]
+    results = [Float32MultiArray() for _ in range(num_agents)] 
+    get_actions = [Float32MultiArray() for _ in range(num_agents)]
+    
+    for learn in range(LEARN):
+        state_size = 9 # 12
+        action_size = 9
+        
+        agents = [ReinforceAgent(state_size, action_size, topic) for topic in agent_topics]
+        env = Env(agents, action_size)
+
+        scores = [] 
+        episodes = []
+        global_step = 0
+        start_time = time.time()
+
+        now = datetime.datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+        FIENAME = '/home/rtos/Result_Data/ubuntu_A_' + current_time + '.csv'
+
+        for e in range(agents[0].load_episode + 1, EPISODES):
+            done = False
+            dones = [False for _ in agent_topics]
+            
+            states, pxes = env.reset()
+            
+            score = 0
+            scores_ = [0 for _ in agent_topics] # range(num_agent)
+            actions = [0 for _ in agent_topics]
+            for t in range(agents[0].episode_step):
+                for idx in range(num_agents):
+                    actions[idx] = agents[idx].getAction(states[idx])
+                actions[1] = 5 # 5
+                actions[2] = 3 # 3
+                print(actions)
+
+                next_states, rewards, dones, next_pxes = env.step(actions, agent_topics)
+
+                for idx in range(num_agents):
+                    rewards[idx] = (next_pxes[idx] - pxes[idx]) * 100 + rewards[idx] #
+                    agents[idx].appendMemory(states[idx], actions[idx], rewards[idx], next_states[idx], dones[idx])
+
+                    if len(agents[idx].memory) >= agents[idx].train_start:
+                        if global_step <= agents[idx].target_update:
+                            agents[idx].trainModel()
+                        else:
+                            agents[idx].trainModel(True)
+
+                    scores_[idx] += rewards[idx]
+                    states[idx] = next_states[idx]
+                    pxes[idx] = next_pxes[idx]
+                    get_actions[idx].data = [actions[idx], scores_[idx], rewards[idx]]
+                    pub_get_actions[idx].publish(get_actions[idx])
+
+                    if e % 10 == 0:
+                        agents[idx].model_actor.save(agents[idx].dirPath + str(e) + '.h5')
+                        agents[idx].model_critic.save(agents[idx].dirPath + str(e) + '.h5')
+                        with open(agents[idx].dirPath + str(e) + '.json', 'w') as outfile:
+                            json.dump(param_dictionary, outfile)
+
+                done = dones[0] or dones[1] or dones[2]
+                score = scores_[0] + scores_[1] + scores_[2] # 
+
+                if t >= 500:
+                    rospy.loginfo("Time out!!")
+                    done = True
+
+                if done:
+                    # result.data = [score, (np.max(agent1.q_value) + np.max(agent2.q_value) + np.max(agent3.q_value)) / 3]
+                    
+                    for idx in range(num_agents):
+                        results[idx].data = [scores_[idx], np.max(agents[idx].q_value)]
+                        pub_results[idx].publish(results[idx])
+                        # agents[idx].updateTargetModel()
+                        scores.append(score)
+                        episodes.append(e)
+                        m, s = divmod(int(time.time() - start_time), 60)
+                        h, m = divmod(m, 60)
+                        rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                                e, scores[idx], len(agents[idx].memory), agents[idx].epsilon, h, m, s)
+                        param_keys = ['epsilon']
+                        param_value = [agents[idx].epsilon]
+                        param_dictionary = dict(zip(param_keys, param_value))
+
+                    if os.path.isfile(FIENAME) == False:
+                        open(FIENAME, 'w')
+                    with open(FIENAME, 'a') as f:
+                        wr = csv.writer(f)
+                        wr.writerow(results[0].data)
+                    break
+                
+                global_step += 1
+                if global_step % agents[0].target_update == 0:
+                    rospy.loginfo("UPDATE TARGET NETWORK")
+
+            for idx in range(num_agents):
+                if agents[idx].epsilon > agents[idx].epsilon_min:
+                    agents[idx].epsilon *= agents[idx].epsilon_decay

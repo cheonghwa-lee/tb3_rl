@@ -62,11 +62,11 @@ class Env():
         # self.get_goalbox = False
         # self.respawn_goal = Respawn()
 
-    def getGoalDistance(self):
-        goal_distances = []
-        for idx in range(self.num_agents):
-            goal_distances.append(round(math.hypot(self.goal_xs[idx] - self.positions[idx].x, 0), 2))
-        return goal_distances
+    # def getGoalDistance(self):
+    #     goal_distances = []
+    #     for idx in range(self.num_agents):
+    #         goal_distances.append(round(math.hypot(self.goal_xs[idx] - self.positions[idx].x, 0), 2))
+    #     return goal_distances
 
     def getOdometry(self, odom):
         idx = int(odom.header.frame_id[4])
@@ -76,13 +76,13 @@ class Env():
         orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
         _, _, self.yaws[idx] = euler_from_quaternion(orientation_list)
 
-        goal_angle = math.atan2(self.goal_ys[idx] - self.positions[idx].y, self.goal_xs[idx] - self.positions[idx].x)
-        heading = goal_angle - self.yaws[idx]
-        if heading > pi:
-            heading -= 2 * pi
-        elif heading < -pi:
-            heading += 2 * pi
-        self.headings[idx] = round(heading, 2)
+        # goal_angle = math.atan2(self.goal_ys[idx] - self.positions[idx].y, self.goal_xs[idx] - self.positions[idx].x)
+        # heading = goal_angle - self.yaws[idx]
+        # if heading > pi:
+        #     heading -= 2 * pi
+        # elif heading < -pi:
+        #     heading += 2 * pi
+        # self.headings[idx] = round(heading, 2)
 
     def getState(self):
         states = []
@@ -153,11 +153,32 @@ class Env():
                 reward = 100
                 self.pub_cmd_vels[idx].publish(Twist())
 
-                self.goal_distances = self.getGoalDistance()
+                # self.goal_distances = self.getGoalDistance()
                 self.get_goalbox = False
 
             rewards.append(reward)
         return rewards
+
+    def setAction(self, actions, agent_topics):
+        action_list = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
+        
+        pid_list = [self.pid, self.pid_2, self.pid_3]
+        input_list = [self.goal_ys[0], -0.15, 0.15]
+        vel_cmds = [Twist() for _ in range(self.num_agents)]
+
+        for idx in range(self.num_agents):
+            action_list[actions[idx]](idx)
+
+            vel_cmds[idx].linear.x = self.cmd_vels[idx]
+            vel_cmds[idx].angular.z = pid_list[idx](input_list[idx]) # 
+            self.pub_cmd_vels[idx].publish(vel_cmds[idx])
+
+            data = None
+            while data is None:
+                try:
+                    data = rospy.wait_for_message(agent_topics[idx] + "/scan", LaserScan, timeout=5)
+                except:
+                    pass
 
     def pid(self, goal_y):
         p = 1.0
@@ -258,39 +279,23 @@ class Env():
         return "8"
 
     def step(self, actions, agent_topics):
-        action_list = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
+        self.setAction(actions, agent_topics)
         
-        pid_list = [self.pid, self.pid_2, self.pid_3]
-        input_list = [self.goal_ys[0], -0.15, 0.15]
-        vel_cmds = [Twist() for _ in range(self.num_agents)]
 
-        for idx in range(self.num_agents):
-            action_list[actions[idx]](idx)
-
-            vel_cmds[idx].linear.x = self.cmd_vels[idx]
-            vel_cmds[idx].angular.z = pid_list[idx](input_list[idx]) # 
-            self.pub_cmd_vels[idx].publish(vel_cmds[idx])
-
-            data = None
-            while data is None:
-                try:
-                    data = rospy.wait_for_message(agent_topics[idx] + "/scan", LaserScan, timeout=5)
-                except:
-                    pass
         
-        next_states = [0 for _ in range(self.num_agents)]
-        rewards = [0 for _ in range(self.num_agents)]
-        dones = [0 for _ in range(self.num_agents)]
-        next_pxes = [0 for _ in range(self.num_agents)]
+        # next_states = [0 for _ in range(self.num_agents)]
+        # rewards = [0 for _ in range(self.num_agents)]
+        # dones = [0 for _ in range(self.num_agents)]
+        # next_pxes = [0 for _ in range(self.num_agents)]
 
         next_states, dones, next_pxes = self.getState()
         rewards = self.setReward(next_states, dones, actions, agent_topics)
 
-        # return np.asarray(state), reward, done, px
         return np.asarray(next_states), rewards, dones, next_pxes
 
     def reset(self):
         rospy.wait_for_service('gazebo/reset_simulation')
+
         try:
             self.reset_proxy()
         except (rospy.ServiceException) as e:
@@ -315,8 +320,8 @@ class Env():
             except:
                 pass
         
-        self.goal_distances = self.getGoalDistance()
-        data = [data1, data2, data3]
+        # self.goal_distances = self.getGoalDistance()
+        # data = [data1, data2, data3]
         states, dones, pxes = self.getState()
 
         return np.asarray(states), pxes

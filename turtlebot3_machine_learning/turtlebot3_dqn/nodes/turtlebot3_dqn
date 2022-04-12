@@ -27,18 +27,17 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from collections import deque
 from std_msgs.msg import Float32MultiArray
-from src.turtlebot3_dqn.environment_stage_1_rl import Env
+from src.turtlebot3_dqn.environment_dqn import Env
 from keras.models import Sequential, load_model
 from keras.optimizers import RMSprop
 from keras.layers import Dense, Dropout, Activation
 
-import pandas as pd
 import csv
 
 import datetime
 
 LEARN = 50 # 10
-EPISODES = 505 # 505
+EPISODES = 305 # 505
 METRIC_NAME = "ubuntu_A_2"
 
 class ReinforceAgent():
@@ -190,6 +189,7 @@ if __name__ == '__main__':
                     actions[idx] = agents[idx].getAction(states[idx])
                 actions[1] = 5 # 5
                 actions[2] = 3 # 3
+                print(actions)
 
                 next_states, rewards, dones, next_pxes = env.step(actions, agent_topics)
 
