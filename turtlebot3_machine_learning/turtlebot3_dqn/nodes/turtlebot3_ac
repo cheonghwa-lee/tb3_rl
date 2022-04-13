@@ -138,17 +138,20 @@ class ReinforceAgent():
         self.target_model_actor.set_weights(self.model_actor.get_weights())
         self.target_model_critic.set_weights(self.model_critic.get_weights())
 
-    # def getAction(self, state):
-    #     rand = np.random.rand()
-    #     if  rand <= self.epsilon:
-    #         self.q_value = np.zeros(self.action_size)
-    #         return random.randrange(self.action_size)
-    #         # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
-    #         # return rand_choice
-    #     else:
-    #         q_value = self.model.predict(state.reshape(1, len(state)))
-    #         self.q_value = q_value
-    #         return np.argmax(q_value[0])
+    def getAction(self, state):
+        rand = np.random.rand()
+        if  rand <= self.epsilon:
+            self.q_value = np.zeros(self.action_size)
+            q_value = self.model_actor.predict(state.reshape(1, len(state)))
+            self.q_value = q_value
+            # print("tlqkf", q_value)
+            return np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
+            # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
+            # return rand_choice
+        else:
+            q_value = self.model_actor.predict(state.reshape(1, len(state)))
+            self.q_value = q_value
+            return np.argmax(q_value[0])
 
     def getAction(self, state):
         # rand = np.random.rand()
@@ -197,16 +200,20 @@ class ReinforceAgent():
             Y_batch = np.append(Y_batch, np.array([[next_q_value]]), axis=0)
 
             diff = rewards + self.discount_factor * next_target - q_value
+            diff = float(diff)
+            diff = [diff] * self.action_size 
+            print(diff, rewards, next_target, q_value)
             action_probs = self.model_actor.predict(states.reshape(1, len(states)))
+            # print(type(action_probs))
             log_probs = np.log(action_probs)
-            Y_batch_actor = np.append(Y_batch_actor, np.array(-log_probs * diff), axis=0)
+            Y_batch_actor = np.append(Y_batch_actor, np.array([diff]), axis=0)
 
             if dones:
                 X_batch = np.append(X_batch, np.array([next_states.copy()]), axis=0)
                 Y_batch = np.append(Y_batch, np.array([[rewards] * 1]), axis=0)
-                Y_batch_actor = np.append(Y_batch_actor, np.array(-log_probs * diff), axis=0)
+                Y_batch_actor = np.append(Y_batch_actor, np.array([diff]), axis=0)
             
-        print("UPDATE!@#$%^&*()")
+        # print("UPDATE!@#$%^&*()")
         self.model_critic.fit(X_batch, Y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
         self.model_actor.fit(X_batch, Y_batch_actor, batch_size=self.batch_size, epochs=1, verbose=0)
 
@@ -250,7 +257,7 @@ if __name__ == '__main__':
                     actions[idx] = agents[idx].getAction(states[idx])
                 actions[1] = 5 # 5
                 actions[2] = 3 # 3
-                print(actions)
+                # print(actions)
 
                 next_states, rewards, dones, next_pxes = env.step(actions, agent_topics)
 
