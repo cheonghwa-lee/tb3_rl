@@ -321,3 +321,5 @@ if __name__ == '__main__':
             for idx in range(num_agents):
                 if agents[idx].epsilon > agents[idx].epsilon_min:
                     agents[idx].epsilon *= agents[idx].epsilon_decay
+
+
