@@ -202,7 +202,7 @@ class ReinforceAgent():
             diff = rewards + self.discount_factor * next_target - q_value
             diff = float(diff)
             diff = [diff] * self.action_size 
-            print(diff, rewards, next_target, q_value)
+            # print(diff, rewards, next_target, q_value)
             action_probs = self.model_actor.predict(states.reshape(1, len(states)))
             # print(type(action_probs))
             log_probs = np.log(action_probs)
