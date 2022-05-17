@@ -136,7 +136,7 @@ class Env():
         # obstacle_min_range = state[-2]
         current_distance = states[-1] # -1 # -3
         heading = states[-2] # -2 # -4
-
+            
         rewards = []
         for idx in range(self.num_agents):
             if self.positions[0].x>self.positions[2].x:
