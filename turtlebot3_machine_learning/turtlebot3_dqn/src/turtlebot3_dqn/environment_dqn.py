@@ -139,7 +139,15 @@ class Env():
 
         rewards = []
         for idx in range(self.num_agents):
-            reward = -1 # - abs(reward_y) # 22-01-05
+            if self.positions[0].x>self.positions[2].x:
+                sequence+=1
+                
+            if sequence is 1:
+                reward=200
+            else:
+                reward=-1
+            
+            # reward = -1 # - abs(reward_y) # 22-01-05
             
             # if done or self.done:
             if dones[idx]:
