@@ -38,7 +38,7 @@ import csv
 import datetime
 
 LEARN = 50 # 10
-EPISODES = 50 # 505
+EPISODES = 500 # 505
 METRIC_NAME = "ubuntu_A_2"
 
 class ReinforceAgent():
@@ -161,7 +161,7 @@ class ReinforceAgent():
         # return rand_choice
         q_value = self.model_actor.predict(state.reshape(1, len(state)))
         self.q_value = q_value
-        # print("action"+str(np.argmax(q_value[0])))
+        print("action"+str(np.argmax(q_value[0])))
         # print("tlqkf", q_value)
         action = np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
         return action
@@ -272,7 +272,6 @@ if __name__ == '__main__':
                 for idx in range(num_agents):
                     rewards[idx] = (next_pxes[idx] - pxes[idx]) * 100 + rewards[idx] #
                     agents[idx].appendMemory(states[idx], actions[idx], rewards[idx], next_states[idx], dones[idx])
-                    # print("len(agents[idx].memory): "+ str(len(agents[idx].memory)))
 
                     if len(agents[idx].memory) >= agents[idx].train_start:
                         if global_step <= agents[idx].target_update:

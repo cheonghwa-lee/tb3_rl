@@ -38,11 +38,12 @@ import csv
 import datetime
 
 LEARN = 50 # 10
-EPISODES = 50 # 505
+EPISODES = 500 # 505
 METRIC_NAME = "ubuntu_A_2"
 
 class ReinforceAgent():
     def __init__(self, state_size, action_size, topic):
+        
         self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
         self.dirPath = os.path.dirname(os.path.realpath(__file__))
         self.dirPath = self.dirPath.replace('turtlebot3_dqn/nodes', 'turtlebot3_dqn/save_model/stage_1_')
@@ -76,13 +77,13 @@ class ReinforceAgent():
 
         # self.updateTargetModel()
 
-        if self.load_model:
-            self.model_actor.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
-            self.model_critic.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
+        # if self.load_model:
+        #     self.model_actor.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
+        #     self.model_critic.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
 
-            with open(self.dirPath+str(self.load_episode)+'.json') as outfile:
-                param = json.load(outfile)
-                self.epsilon = param.get('epsilon')
+        #     with open(self.dirPath+str(self.load_episode)+'.json') as outfile:
+        #         param = json.load(outfile)
+        #         self.epsilon = param.get('epsilon')
 
     # def buildModel(self):
     #     model = Sequential()
@@ -102,14 +103,16 @@ class ReinforceAgent():
     def buildModel_actor(self):
         model = Sequential()
         dropout = 0.2
-
-        model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dropout(dropout))
+        # relu ==> elu
+        # learning rate Lower
+        # delete dropout
+        model.add(Dense(128, input_shape=(self.state_size,), activation='elu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(128, activation='elu', kernel_initializer='lecun_uniform'))
+        # model.add(Dropout(dropout))
 
         model.add(Dense(self.action_size, kernel_initializer='lecun_uniform'))
         model.add(Activation('softmax'))
-        model.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
+        model.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam(lr=0.000001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
         model.summary()
 
         return model
@@ -118,13 +121,13 @@ class ReinforceAgent():
         model = Sequential()
         dropout = 0.2
 
-        model.add(Dense(64, input_shape=(self.state_size,), activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dropout(dropout))
+        model.add(Dense(128, input_shape=(self.state_size,), activation='elu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(128, activation='elu', kernel_initializer='lecun_uniform'))
+        # model.add(Dropout(dropout))
 
         model.add(Dense(1, kernel_initializer='lecun_uniform'))
         # model.add(Activation('softmax'))
-        model.compile(loss='mse', optimizer=keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
+        model.compile(loss='mse', optimizer=keras.optimizers.Adam(lr=0.00001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
         model.summary()
 
         return model
@@ -139,32 +142,36 @@ class ReinforceAgent():
         self.target_model_actor.set_weights(self.model_actor.get_weights())
         self.target_model_critic.set_weights(self.model_critic.get_weights())
 
+    def getAction(self, state):
+        rand = np.random.rand()
+        if  rand <= self.epsilon:
+            self.q_value = np.zeros(self.action_size)
+            k=random.randrange(self.action_size)
+            print("rand"+str(k))
+            return random.randrange(self.action_size)
+            # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
+            # return rand_choice
+            
+        else:
+            q_value = self.model_actor.predict(state.reshape(1, len(state)))
+            self.q_value = q_value
+            # print("tlqkf", q_value)
+            action = np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
+            print("action"+str(action))
+            return action
+
     # def getAction(self, state):
-    # rand = np.random.rand()
-    #     if  rand <= self.epsilon:
-    #         self.q_value = np.zeros(self.action_size)
-    #         return random.randrange(self.action_size)
-    #         # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
-    #         # return rand_choice
-    #     else:
-    #         q_value = self.model_actor.predict(state.reshape(1, len(state)))
+    #     # rand = np.random.rand()
+    #     # self.q_value = np.zeros(self.action_size)
+    #     # return random.randrange(self.action_size)
+    #     # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
+    #     # return rand_choice
+    #     q_value = self.model_actor.predict(state.reshape(1, len(state)))
     #     self.q_value = q_value
+    #     print("action"+str(np.argmax(q_value[0])))
     #     # print("tlqkf", q_value)
     #     action = np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
     #     return action
-
-    def getAction(self, state):
-        # rand = np.random.rand()
-        # self.q_value = np.zeros(self.action_size)
-        # return random.randrange(self.action_size)
-        # rand_choice = np.random.choice([0, 1, 2, 3, 4, 5], p=[1.0,0.0,0.0,0.0,0.0,0.0])
-        # return rand_choice
-        q_value = self.model_actor.predict(state.reshape(1, len(state)))
-        self.q_value = q_value
-        # print("action"+str(np.argmax(q_value[0])))
-        # print("tlqkf", q_value)
-        action = np.random.choice(len(np.squeeze(q_value)), p=np.squeeze(q_value))
-        return action
 
     def appendMemory(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -181,6 +188,7 @@ class ReinforceAgent():
             rewards = mini_batch[i][2]
             next_states = mini_batch[i][3]
             dones = mini_batch[i][4]
+            
             # print("states"+str(states))
             # print("actions"+str(actions))
             # print("rewards"+str(rewards))
@@ -260,61 +268,108 @@ if __name__ == '__main__':
             score = 0
             scores_ = [0 for _ in agent_topics] # range(num_agent)
             actions = [0 for _ in agent_topics]
+            goal_num=0
+            
+            
             for t in range(agents[0].episode_step):
-                for idx in range(num_agents):
-                    actions[idx] = agents[idx].getAction(states[idx])
+                # for idx in range(num_agents):
+                #     actions[idx] = agents[idx].getAction(states[idx])
                 actions[1] = 5 # 5
                 actions[2] = 3 # 3
                 # print(actions)
 
                 next_states, rewards, dones, next_pxes = env.step(actions, agent_topics)
-
-                for idx in range(num_agents):
-                    rewards[idx] = (next_pxes[idx] - pxes[idx]) * 100 + rewards[idx] #
-                    agents[idx].appendMemory(states[idx], actions[idx], rewards[idx], next_states[idx], dones[idx])
-                    # print("len(agents[idx].memory): "+ str(len(agents[idx].memory)))
-
-                    if len(agents[idx].memory) >= agents[idx].train_start:
-                        if global_step <= agents[idx].target_update:
-                            agents[idx].trainModel()
-                        else:
-                            agents[idx].trainModel(True)
-
-                    scores_[idx] += rewards[idx]
-                    states[idx] = next_states[idx]
-                    pxes[idx] = next_pxes[idx]
-                    get_actions[idx].data = [actions[idx], scores_[idx], rewards[idx]]
-                    pub_get_actions[idx].publish(get_actions[idx])
-
-                    if e % 10 == 0:
-                        agents[idx].model_actor.save(agents[idx].dirPath + str(e) + '.h5')
-                        agents[idx].model_critic.save(agents[idx].dirPath + str(e) + '.h5')
-                        with open(agents[idx].dirPath + str(e) + '.json', 'w') as outfile:
-                            json.dump(param_dictionary, outfile)
-
-                done = dones[0] or dones[1] or dones[2]
-                score = scores_[0] + scores_[1] + scores_[2] # 
-
-                if t >= 500:
+                if t >= 250:
                     rospy.loginfo("Time out!!")
+                    rewards=-200
                     done = True
 
+                # for idx in range(num_agents):
+                #     rewards[idx] = (next_pxes[idx] - pxes[idx]) * 100 + rewards[idx] #
+                #     agents[idx].appendMemory(states[idx], actions[idx], rewards[idx], next_states[idx], dones[idx])
+
+                #     if len(agents[idx].memory) >= agents[idx].train_start:
+                #         if global_step <= agents[idx].target_update:
+                #             agents[idx].trainModel()
+                #         else:
+                #             agents[idx].trainModel(True)
+
+                #     scores_[idx] += rewards[idx]
+                #     states[idx] = next_states[idx]
+                #     pxes[idx] = next_pxes[idx]
+                #     get_actions[idx].data = [actions[idx], scores_[idx], rewards[idx]]
+                #     pub_get_actions[idx].publish(get_actions[idx])
+
+                #     if e % 10 == 0:
+                #         agents[idx].model_actor.save(agents[idx].dirPath + str(e) + '.h5')
+                #         agents[idx].model_critic.save(agents[idx].dirPath + str(e) + '.h5')
+                #         with open(agents[idx].dirPath + str(e) + '.json', 'w') as outfile:
+                #             json.dump(param_dictionary, outfile)
+
+                # done = dones[0] or dones[1] or dones[2]
+                # score = scores_[0] + scores_[1] + scores_[2] # 
+                
+                idx=0
+                actions[idx] = agents[idx].getAction(states[idx])
+                rewards[idx] = (next_pxes[idx] - pxes[idx]) * 100 + rewards[idx] #
+                agents[idx].appendMemory(states[idx], actions[idx], rewards[idx], next_states[idx], dones[idx])
+
+                if len(agents[idx].memory) >= agents[idx].train_start:
+                    if global_step <= agents[idx].target_update:
+                        agents[idx].trainModel()
+                    else:
+                        agents[idx].trainModel(True)
+
+                scores_[idx] += rewards[idx]
+                states[idx] = next_states[idx]
+                pxes[idx] = next_pxes[idx]
+                get_actions[idx].data = [actions[idx], scores_[idx], rewards[idx]]
+                pub_get_actions[idx].publish(get_actions[idx])
+
+                # if e % 10 == 0:
+                #     agents[idx].model_actor.save(agents[idx].dirPath + str(e) + '.h5')
+                #     agents[idx].model_critic.save(agents[idx].dirPath + str(e) + '.h5')
+                #     with open(agents[idx].dirPath + str(e) + '.json', 'w') as outfile:
+                #         json.dump(param_dictionary, outfile)
+
+                done = dones[0]
+                score = scores_[0]
+                
+
+
                 if done:
+                    
+                    goal_num+=1
+                    
                     # result.data = [score, (np.max(agent1.q_value) + np.max(agent2.q_value) + np.max(agent3.q_value)) / 3]
                     
-                    for idx in range(num_agents):
-                        results[idx].data = [scores_[idx], np.max(agents[idx].q_value)]
-                        pub_results[idx].publish(results[idx])
-                        # agents[idx].updateTargetModel()
-                        scores.append(score)
-                        episodes.append(e)
-                        m, s = divmod(int(time.time() - start_time), 60)
-                        h, m = divmod(m, 60)
-                        rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
-                                e, scores[idx], len(agents[idx].memory), agents[idx].epsilon, h, m, s)
-                        param_keys = ['epsilon']
-                        param_value = [agents[idx].epsilon]
-                        param_dictionary = dict(zip(param_keys, param_value))
+                    # for idx in range(num_agents):
+                    #     results[idx].data = [scores_[idx], np.max(agents[idx].q_value)]
+                    #     pub_results[idx].publish(results[idx])
+                    #     # agents[idx].updateTargetModel()
+                    #     scores.append(score)
+                    #     episodes.append(e)
+                    #     m, s = divmod(int(time.time() - start_time), 60)
+                    #     h, m = divmod(m, 60)
+                    #     rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                    #             e, scores[idx], len(agents[idx].memory), agents[idx].epsilon, h, m, s)
+                    #     param_keys = ['epsilon']
+                    #     param_value = [agents[idx].epsilon]
+                    #     param_dictionary = dict(zip(param_keys, param_value))
+                    
+                    idx=0
+                    results[idx].data = [scores_[idx], np.max(agents[idx].q_value)]
+                    pub_results[idx].publish(results[idx])
+                    # agents[idx].updateTargetModel()
+                    scores.append(score)
+                    episodes.append(e)
+                    m, s = divmod(int(time.time() - start_time), 60)
+                    h, m = divmod(m, 60)
+                    rospy.loginfo('Ep: %d score: %.2f memory: %d epsilon: %.2f time: %d:%02d:%02d',
+                            e, scores[idx], len(agents[idx].memory), agents[idx].epsilon, h, m, s)
+                    param_keys = ['epsilon']
+                    param_value = [agents[idx].epsilon]
+                    param_dictionary = dict(zip(param_keys, param_value))
 
                     if os.path.isfile(FIENAME) == False:
                         open(FIENAME, 'w')
@@ -322,12 +377,13 @@ if __name__ == '__main__':
                         wr = csv.writer(f)
                         wr.writerow(results[0].data)
                     break
-                
+                                
                 global_step += 1
                 if global_step % agents[0].target_update == 0:
                     rospy.loginfo("UPDATE TARGET NETWORK")
 
             for idx in range(num_agents):
+                # if goal_num>4:
                 if agents[idx].epsilon > agents[idx].epsilon_min:
                     agents[idx].epsilon *= agents[idx].epsilon_decay
 

@@ -57,6 +57,9 @@ class Env():
         self.goals = [False for _ in range(self.num_agents)]
 
         self.goal = False
+        self.goal_num=0
+        self.sequence=0
+        
 
         # self.initGoal = True
         # self.get_goalbox = False
@@ -115,7 +118,7 @@ class Env():
             states.append(state)
 
             exit = self.positions[idx].y < -0.25 or self.positions[idx].y > 0.25
-            goal_done = self.positions[idx].x > 5.0 # 22-01-05 
+            goal_done = self.positions[0].x > 4.0 # 22-01-05 
             distance_between = min(distance_betweens)
             if distance_between < 0.21 or exit or goal_done:
                 done = True
@@ -136,35 +139,51 @@ class Env():
         # obstacle_min_range = state[-2]
         current_distance = states[-1] # -1 # -3
         heading = states[-2] # -2 # -4
-            
+
         rewards = []
         for idx in range(self.num_agents):
             if self.positions[0].x>self.positions[2].x:
-                sequence+=1
+                self.sequence+=1
                 
-            if sequence is 1:
+            if self.sequence is 1:
                 reward=200
             else:
                 reward=-1
+                
+            # reward = self.positions[0].x-self.positions[2].x# - abs(reward_y) # 22-01-05
             
-            # reward = -1 # - abs(reward_y) # 22-01-05
+            # if self.positions[0].x<self.positions[2].x:
+            #     reward=-1
+            # else:
+            #     reward = self.positions[0].x
+            
+            # reward = -1
+            
+            # reward = self.positions[0].x
+                
+            # print('[0].x: %f[1].x: %f[2].x: %f'%(self.positions[0].x,self.positions[1].x,self.positions[2].x))
             
             # if done or self.done:
-            if dones[idx]:
+            if dones[0]:
                 rospy.loginfo("Collision!!")
-                reward = -1 # -200
+                reward = -200 # -200
                 self.pub_cmd_vels[idx].publish(Twist())
+                print("self.goal_num:")
+                print(self.goal_num)
 
             # if self.get_goalbox or self.goal:
-            if self.goal:
+            if self.goals[0]:
                 rospy.loginfo("Goal!!")
-                reward = 100
+                reward = 200
                 self.pub_cmd_vels[idx].publish(Twist())
+                self.goal_num=self.goal_num+1
 
                 # self.goal_distances = self.getGoalDistance()
                 self.get_goalbox = False
+                
 
             rewards.append(reward)
+        # print('rewards:%f'%rewards[0])
         return rewards
 
     def setAction(self, actions, agent_topics):
