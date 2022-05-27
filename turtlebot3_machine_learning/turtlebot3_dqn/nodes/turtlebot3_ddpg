@@ -39,7 +39,7 @@ import csv
 import datetime
 
 LEARN = 50 # 10
-EPISODES = 500 # 505
+EPISODES = 100 # 505
 METRIC_NAME = "ubuntu_A_2"
 
 class ReinforceAgent():
@@ -65,8 +65,6 @@ class ReinforceAgent():
         self.memory = deque(maxlen=1000000)
 
         self.q_value = np.zeros(self.action_size)
-        
-        self.action=0
 
         # self.model = self.buildModel()
         # self.target_model = self.buildModel()
@@ -92,55 +90,50 @@ class ReinforceAgent():
         model = Sequential()
         dropout = 0.2
 
-        model.add(Dense(256, input_shape=(self.state_size,), activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(Dense(64, input_shape=(self.state_size,), activation='relu',kernel_initializer='lecun_uniform'))
         # model.add(LeakyReLU(alpha=0.2))
         model.add(keras.layers.BatchNormalization())
-        model.add(Dense(256, activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(Dense(64, activation='relu',kernel_initializer='lecun_uniform'))
         model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
         # model.add(Dropout(dropout))
 
         model.add(Dense(self.action_size, activation='tanh',kernel_initializer='lecun_uniform'))
-        model.add(keras.layers.BatchNormalization())
-        # model.add(LeakyReLU(alpha=0.2))s
+        # model.add(LeakyReLU(alpha=0.2))
         model.compile(loss='mse', optimizer=keras.optimizers.Adam(lr=self.learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
         model.summary()
 
         return model
 
     def buildModel_critic(self):
-        model_1 = Sequential()
-        model_2 = Sequential()
-        model_3 = Sequential()
+        model = Sequential()
         dropout = 0.2
 
-        model_1.add(Dense(16, input_shape=(self.state_size,), activation='relu',kernel_initializer='lecun_uniform'))
-        model_1.add(keras.layers.BatchNormalization())
+        model.add(Dense(16, input_shape=(self.state_size,), activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
-        model_1.add(Dense(32, activation='relu',kernel_initializer='lecun_uniform'))
-        model_1.add(keras.layers.BatchNormalization())
+        model.add(Dense(32, activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
         # model.add(Dropout(dropout))
         
-        model_2.add(Dense(32, input_shape=(self.action_size,), activation='relu',kernel_initializer='lecun_uniform'))
-        model_2.add(keras.layers.BatchNormalization())
+        model.add(Dense(32, input_shape=(self.action_size,), activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         
-        model_3.add(keras.layers.Merge([model_1,model_2], mode ='concat'))
-        
+        model.add(Dense(64, input_shape=(self.state_size,), activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
-        model_3.add(Dense(256, activation='relu',kernel_initializer='lecun_uniform'))
-        model_3.add(keras.layers.BatchNormalization())
-        model_3.add(Dense(256, activation='relu',kernel_initializer='lecun_uniform'))
-        model_3.add(keras.layers.BatchNormalization())
+        model.add(Dense(64, activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
 
-        model_3.add(Dense(1, activation='relu',kernel_initializer='lecun_uniform'))
-        model_3.add(keras.layers.BatchNormalization())
+        model.add(Dense(1, activation='relu',kernel_initializer='lecun_uniform'))
+        model.add(keras.layers.BatchNormalization())
         # model.add(LeakyReLU(alpha=0.2))
-        model_3.compile(loss='mse', optimizer=keras.optimizers.Adam(lr=self.learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
-        model_3.summary()
+        model.compile(loss='mse', optimizer=keras.optimizers.Adam(lr=self.learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False))
+        model.summary()
 
-        return model_3
+        return model
         
     def getQvalue(self, reward, next_target, done):
         if done:
@@ -193,14 +186,15 @@ class ReinforceAgent():
         # action = np.random.choice(len(np.squeeze(action_a)), p=np.squeeze(action_a))
         print("action//////////////////"+str(action))
         vel=action[0][0]+noise
-        if vel>1:
-            vel=1
-        elif vel<-1:
-            vel=-1    
+        print("vel//////////////////////"+str(vel))
+        if vel>1.0:
+            vel=1.0
+        elif vel<-1.0:
+            vel=-1.0
+        action_Result=vel*0.2
+        print("action_Result//////////////////////"+str(vel))
         # return (action[0][0]+noise)
-        
-        self.action=vel*0.2
-        return (self.action)
+        return (action_Result)
 
     def appendMemory(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -222,11 +216,8 @@ class ReinforceAgent():
             # print("rewards"+str(rewards))
             # print("next_states"+str(next_states))
             # print("dones"+str(dones))
-            action = self.model_actor.predict(states.reshape(1, len(states)))
-            print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"+str(action.shape))
-            print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"+str(np.array(action)))
 
-            q_value = self.model_critic.predict([states.reshape(1, len(states)),action])
+            q_value = self.model_critic.predict(states.reshape(1, len(states)))
             self.q_value = q_value
             # print("Q_value: "+str(q_value))
 
@@ -235,7 +226,7 @@ class ReinforceAgent():
             # else:
             #     next_target = self.model.predict(next_states.reshape(1, len(next_states)))
             
-            next_target = self.target_model_critic.predict([next_states.reshape(1, len(next_states)),action])
+            next_target = self.target_model_critic.predict(next_states.reshape(1, len(next_states)))
 
             next_q_value = self.getQvalue(rewards, next_target, dones)
             
@@ -259,9 +250,7 @@ class ReinforceAgent():
                 Y_batch_actor = np.append(Y_batch_actor, np.array(q_value), axis=0)
             
         # print("UPDATE!@#$%^&*()")
-        print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"+str(action.shape))
-        print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBB"+str(X_batch.shape))
-        self.model_critic.fit([X_batch,action], Y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
+        self.model_critic.fit(X_batch, Y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
         self.model_actor.fit(X_batch, Y_batch_actor, batch_size=self.batch_size, epochs=1, verbose=0)
         self.updateTargetModel()
 

@@ -61,10 +61,6 @@ class Env():
         self.goal_num=0
         self.sequence=0
         self.start=0
-        self.exits = []
-        self.vel=0
-        self.ang_vel=0
-
         
 
         # self.initGoal = True
@@ -99,7 +95,7 @@ class Env():
         pxes = []
 
         distance_betweens = []
-        self.exits = []
+        exits = []
 
         for idx in range(self.num_agents):
             min_range = 0.13 
@@ -123,10 +119,10 @@ class Env():
                     distance_betweens.append(math.sqrt((self.positions[idx].x - self.positions[j].x) ** 2 + (self.positions[idx].y - self.positions[j].y) ** 2))
             states.append(state)
 
-            self.exit = self.positions[idx].y < -0.25 or self.positions[idx].y > 0.25
+            exit = self.positions[idx].y < -0.25 or self.positions[idx].y > 0.25
             goal_done = self.positions[0].x > 4.0 # 22-01-05 
             distance_between = min(distance_betweens)
-            if distance_between < 0.21 or self.exit or goal_done:
+            if distance_between < 0.21 or exit or goal_done:
                 done = True
                 # self.done = True
             else:
@@ -148,31 +144,28 @@ class Env():
 
         rewards = []
         pres=time()
-        sec=pres-self.start
+        sec=int(pres-self.start)*0.1
         for idx in range(self.num_agents):
             if self.positions[0].x>self.positions[2].x:
                 self.sequence+=1
                 
             if self.sequence is 1:
-                reward=100
+                reward=50
             else:
                 reward=0
-            
-            # # print(self.positions[idx].y)
-            # if self.positions[idx].y <= -0.20 or self.positions[idx].y >= 0.20:
-            #     reward=-100
-            
+                # reward=-sec
+                
             # print(reward)
             # reward=-1
-            
+                
             # reward = self.positions[0].x-self.positions[2].x# - abs(reward_y) # 22-01-05
-        
+            
             # if self.positions[0].x<self.positions[2].x:
             #     reward=-1
             # else:
             #     reward = self.positions[0].x
-        
-            # reward = -1
+            
+            # reward = -1c
             
             # reward = self.positions[0].x
                 
@@ -182,9 +175,7 @@ class Env():
             
             if dones[0]:
                 rospy.loginfo("Collision!!")
-                reward = -100 # -200
-                if idx==0:
-                    reward-=-sec
+                reward = -10 # -200
                 self.pub_cmd_vels[idx].publish(Twist())
                 print("self.goal_num:")
                 print(self.goal_num)
@@ -192,48 +183,30 @@ class Env():
             # if self.get_goalbox or self.goal:
             if self.goals[0]:
                 rospy.loginfo("Goal!!")
-                reward = 200
-                if idx==0:
-                    reward-=-sec
+                reward = 100
                 self.pub_cmd_vels[idx].publish(Twist())
                 self.goal_num=self.goal_num+1
 
                 # self.goal_distances = self.getGoalDistance()
                 self.get_goalbox = False
                 
+
             rewards.append(reward)
         # print('rewards:%f'%rewards[0])
         return rewards
 
-    def setAction(self, action, agent_topics):
-        # action_list = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
+    def setAction(self, actions, agent_topics):
+        action_list = [self.turn_left_f, self.turn_left_h, self.turn_left_m, self.turn_left_l, self.turn_right_f, self.turn_right_h, self.turn_right_m, self.turn_right_l, self.stop]
         
         pid_list = [self.pid, self.pid_2, self.pid_3]
         input_list = [self.goal_ys[0], -0.15, 0.15]
         vel_cmds = [Twist() for _ in range(self.num_agents)]
-        
 
         for idx in range(self.num_agents):
-            # action_list[actions[idx]](idx)
-            self.vel=action[0]
-            # print("action[0]"+str(action[0]))
-            speed=action[idx]
-                
-            if action[idx]<0:
-                self.y_2(idx, -1*speed)
-            else:
-                self.y_1(idx, speed)
-            
-            if idx==0:
-                print("speed"+str(speed)+"self.cmd_vels[idx]"+str(self.cmd_vels[idx])+"pid_list[idx](input_list[idx])"+str(pid_list[idx](input_list[idx])))
-               
-            if self.cmd_vels[idx]<-0.2:
-                self.cmd_vels[idx]=-0.2
-            elif self.cmd_vels[idx]>0.2:
-                self.cmd_vels[idx]=0.2
-            
+            action_list[actions[idx]](idx)
+
             vel_cmds[idx].linear.x = self.cmd_vels[idx]
-            vel_cmds[idx].angular.z = pid_list[idx](input_list[idx]) # s
+            vel_cmds[idx].angular.z = pid_list[idx](input_list[idx]) # 
             self.pub_cmd_vels[idx].publish(vel_cmds[idx])
 
             data = None
@@ -244,11 +217,9 @@ class Env():
                     pass
 
     def pid(self, goal_y):
-        result=0
         p = 1.0
         i = 0.0
         d = 0.0
-        print("goal_y"+str(goal_y))
         y_g_pos = goal_y 
         y_c_pos = self.positions[0].y
         p_error = y_g_pos - y_c_pos
@@ -258,39 +229,18 @@ class Env():
         result = p * error
 
         if result < -0.001:
-            print("sequence_Right")
-            print("-pi/2"+str(-pi/2))
-            if result < -0.6:
+            if result < -0.2:
                 if self.yaws[0] < -pi/2:
-                    print("seqeunce_1")
                     result = 0.0
                 else:
-                    print("seqeunce_2")
                     result = -0.6
         if result > 0.001:
-            print("sequence_Left")
-            print("pi/2"+str(pi/2))
-            if result > 0.6:
+            if result > 0.2:
                 if self.yaws[0] > pi/2:
-                    print("seqeunce_3")
                     result = 0.0
                 else:
-                    print("seqeunce_4")
                     result = 0.6
-        # if self.ang_vel<result:
-        #     self.ang_vel+=0.05
-        # if self.ang_vel>result:
-        #     self.ang_vel-=0.05
-        self.ang_vel=result
-        print("Angle of Turltebot: "+str(self.yaws[0]))
-        print("result"+str(result))
-        print("self.ang_vel"+str(self.ang_vel))
-        print("////////////////////////////////////////////////////")
-        
-        # print("ang_error"+str(ang_error))
-        # print("y_error"+str(y_error))
-        # print("///////////////////////////////////////////////////////")
-        return self.ang_vel 
+        return result
 
     def pid_2(self, goal_y): 
         p = 1.0
@@ -313,21 +263,56 @@ class Env():
         error = 1.5 * y_error + ang_error 
         result = p * error
         return result 
-    
 
     def set_vel_cmd(self, vel_cmd, idx):
         self.cmd_vels[idx] = vel_cmd
 
     def set_goal_y(self, goal_y, idx):
         self.goal_ys[idx] = goal_y
-    
-    def y_1(self, idx, vel):
-        self.set_vel_cmd(vel, idx)
+
+    def turn_left_f(self, idx):
+        self.set_vel_cmd(0.20, idx)
         self.set_goal_y(0.15, idx)
-        
-    def y_2(self, idx, vel):
-        self.set_vel_cmd(vel, idx)
+        return "0"
+
+    def turn_left_h(self, idx):
+        self.set_vel_cmd(0.15, idx)
+        self.set_goal_y(0.15, idx)
+        return "1"
+
+    def turn_left_m(self, idx):
+        self.set_vel_cmd(0.1, idx)
+        self.set_goal_y(0.15, idx)
+        return "2"
+
+    def turn_left_l(self, idx):
+        self.set_vel_cmd(0.05, idx)
+        self.set_goal_y(0.15, idx)
+        return "3"
+
+    def turn_right_f(self, idx):
+        self.set_vel_cmd(0.20, idx)
         self.set_goal_y(-0.15, idx)
+        return "4"
+
+    def turn_right_h(self, idx):
+        self.set_vel_cmd(0.15, idx)
+        self.set_goal_y(-0.15, idx)
+        return "5"
+
+    def turn_right_m(self, idx):
+        self.set_vel_cmd(0.1, idx)
+        self.set_goal_y(-0.15, idx)
+        return "6"
+
+    def turn_right_l(self, idx):
+        self.set_vel_cmd(0.05, idx)
+        self.set_goal_y(-0.15, idx)
+        return "7"
+
+    def stop(self, idx):
+        self.set_vel_cmd(0.0, idx)
+        return "8"
 
     def step(self, actions, agent_topics):
         self.setAction(actions, agent_topics)
@@ -346,7 +331,6 @@ class Env():
 
     def reset(self):
         rospy.wait_for_service('gazebo/reset_simulation')
-        self.ang_vel=0
 
         try:
             self.reset_proxy()
