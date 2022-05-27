@@ -16,7 +16,7 @@
 #################################################################################
 
 # Authors: Gilbert #
-
+    
 import rospy
 import os
 import json
@@ -278,7 +278,7 @@ if __name__ == '__main__':
 
         now = datetime.datetime.now()
         current_time = now.strftime("%H:%M:%S")
-        FIENAME = '/home/kinovamico/Result_Data/ubuntu_A_' + current_time + '.csv'
+        FIENAME = '/home/jaemin/Result_Data/ubuntu_A_' + current_time + '.csv'
 
         for e in range(agents[0].load_episode + 1, EPISODES):
             done = False
